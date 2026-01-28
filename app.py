@@ -223,6 +223,62 @@ def detect_columns():
     except Exception as e:
         return jsonify({'success': False, 'message': str(e)}), 400
 
+@app.route('/api/open-file-dialog', methods=['POST'])
+def open_file_dialog():
+    """Open native file dialog using tkinter."""
+    try:
+        import tkinter as tk
+        from tkinter import filedialog
+        
+        data = request.json
+        dialog_type = data.get('type', 'file')
+        file_types = data.get('file_types', [])
+        
+        # Create hidden root window
+        root = tk.Tk()
+        root.withdraw()
+        root.attributes('-topmost', True)
+        
+        if dialog_type == 'directory':
+            # Folder picker
+            path = filedialog.askdirectory(
+                title='Select Folder',
+                mustexist=True
+            )
+        else:
+            # File picker
+            if file_types:
+                filetypes = [
+                    (ft['name'], ft['pattern']) for ft in file_types
+                ] + [('All Files', '*.*')]
+            else:
+                filetypes = [('All Files', '*.*')]
+            
+            path = filedialog.askopenfilename(
+                title='Select File',
+                filetypes=filetypes
+            )
+        
+        root.destroy()
+        
+        if path:
+            return jsonify({
+                'success': True,
+                'path': path
+            })
+        else:
+            return jsonify({
+                'success': False,
+                'message': 'No file selected'
+            })
+    
+    except Exception as e:
+        logging.error(f"File dialog failed: {e}")
+        return jsonify({
+            'success': False,
+            'message': str(e)
+        }), 400
+
 @app.route('/api/browse-directory', methods=['POST'])
 def browse_directory():
     """Browse file system - FULL ACCESS."""

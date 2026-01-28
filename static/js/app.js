@@ -530,17 +530,82 @@ let browserFileType = '';
 
 async function browseDirectory(targetInputId) {
     browserTargetInput = targetInputId;
-    browserFileType = 'directory';
     
-    // Get initial path from input or use home directory
-    const input = document.getElementById(targetInputId);
-    const initialPath = input.value.trim() || '';
-    
-    await loadDirectory(initialPath || '');
-    document.getElementById('fileBrowserModal').style.display = 'flex';
+    // Open native folder picker dialog - ACTUAL Windows Explorer!
+    try {
+        const response = await fetch('/api/open-file-dialog', {
+            method: 'POST',
+            headers: {'Content-Type': 'application/json'},
+            body: JSON.stringify({
+                type: 'directory'
+            })
+        });
+        
+        const data = await response.json();
+        
+        if (data.success && data.path) {
+            const input = document.getElementById(targetInputId);
+            input.value = data.path;
+            log(`✓ Selected folder: ${data.path}`, 'success');
+        } else if (data.message !== 'No file selected') {
+            log(`⚠ ${data.message}`, 'warning');
+        }
+    } catch (error) {
+        console.error('Failed to open folder dialog:', error);
+        log('✗ Failed to open folder picker', 'error');
+    }
 }
 
 async function browseFile(targetInputId, fileType) {
+    browserTargetInput = targetInputId;
+    
+    // Define file types for the dialog
+    let fileTypes = [];
+    
+    if (fileType === 'excel_file') {
+        fileTypes = [
+            {name: 'Excel Files', pattern: '*.xlsx *.xls'},
+            {name: 'Excel Workbook', pattern: '*.xlsx'},
+            {name: 'Excel 97-2003', pattern: '*.xls'}
+        ];
+    } else if (fileType === 'csv_file') {
+        fileTypes = [
+            {name: 'CSV Files', pattern: '*.csv'},
+            {name: 'Text Files', pattern: '*.txt'}
+        ];
+    } else {
+        // Accept all files
+        fileTypes = [];
+    }
+    
+    // Open native file picker dialog - ACTUAL Windows Explorer!
+    try {
+        const response = await fetch('/api/open-file-dialog', {
+            method: 'POST',
+            headers: {'Content-Type': 'application/json'},
+            body: JSON.stringify({
+                type: 'file',
+                file_types: fileTypes
+            })
+        });
+        
+        const data = await response.json();
+        
+        if (data.success && data.path) {
+            const input = document.getElementById(targetInputId);
+            input.value = data.path;
+            log(`✓ Selected: ${data.path}`, 'success');
+        } else if (data.message !== 'No file selected') {
+            log(`⚠ ${data.message}`, 'warning');
+        }
+    } catch (error) {
+        console.error('Failed to open file dialog:', error);
+        log('✗ Failed to open file picker', 'error');
+    }
+}
+
+// Fallback: Custom browser (for advanced users who want to see the file tree)
+async function showCustomBrowser(targetInputId, fileType) {
     browserTargetInput = targetInputId;
     browserFileType = fileType;
     
@@ -641,26 +706,28 @@ async function loadDirectory(path) {
                         itemDiv.onclick = () => loadDirectory(item.path);
                     }
                 } else if (item.type === 'file') {
-                    // Check if file type matches what we're looking for
-                    let allowSelection = false;
+                    // ALL FILES ARE NOW SELECTABLE!
+                    itemDiv.onclick = () => selectFile(item.path);
+                    itemDiv.style.cursor = 'pointer';
                     
+                    // Highlight files that match the expected type
+                    let isPreferredType = false;
                     if (browserFileType === 'excel_file' && item.extension === '.xlsx') {
-                        allowSelection = true;
+                        isPreferredType = true;
                     } else if (browserFileType === 'csv_file' && item.extension === '.csv') {
-                        allowSelection = true;
-                    } else if (browserFileType === 'directory') {
-                        // When browsing for directory, don't allow file selection
-                        allowSelection = false;
+                        isPreferredType = true;
+                    } else if (item.extension === '.eml' || item.extension === '.msg') {
+                        // Email files always highlighted
+                        isPreferredType = true;
                     }
                     
-                    if (allowSelection) {
-                        itemDiv.onclick = () => selectFile(item.path);
-                        itemDiv.style.cursor = 'pointer';
-                        // Highlight selectable files
-                        itemDiv.style.backgroundColor = '#f0f9ff';
+                    if (isPreferredType) {
+                        // Highlight preferred files
+                        itemDiv.style.backgroundColor = '#e6f3ff';
+                        itemDiv.style.border = '2px solid #667eea';
                     } else {
-                        itemDiv.style.opacity = '0.5';
-                        itemDiv.style.cursor = 'not-allowed';
+                        // All other files are still clickable, just not highlighted
+                        itemDiv.style.backgroundColor = 'white';
                     }
                 }
                 
