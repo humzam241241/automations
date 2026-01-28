@@ -136,40 +136,38 @@
                 <small>Comma-separated column names</small>
                 
                 <div id="columnHelp" class="help-box" style="display:none;">
-                    <h4>🧠 Intelligent Extraction Patterns</h4>
-                    <p>Type these column names and we'll automatically extract the data:</p>
+                    <h4>🧠 Intelligent Extraction - Works with ANY Column Name!</h4>
+                    <p>Type <strong>any</strong> column name - the system automatically extracts matching data:</p>
                     
                     <div class="help-grid">
                         <div class="help-item">
-                            <strong>Reference Numbers:</strong>
-                            <code>MI #</code> → Extracts MI-12345, MI #001<br>
-                            <code>MM #</code> → Extracts MM-12345<br>
-                            <code>CAPA #</code> → Extracts CAPA-001<br>
-                            <code>QE</code> → Extracts QE numbers<br>
-                            <code>EQQ</code> → Extracts EQQ numbers<br>
-                            <code>PO #</code> → Extracts PO-xxx, Purchase Orders<br>
-                            <code>WO #</code> → Extracts Work Orders<br>
-                            <code>NCR</code> → Non-Conformance Reports<br>
-                            <code>CAR</code> → Corrective Actions
+                            <strong>🔢 Number Columns (auto-detected):</strong>
+                            <code>Building Number</code> → Building-123, Building #5<br>
+                            <code>Work Order #</code> → WO-12345, Work Order: 001<br>
+                            <code>MI #</code> → MI-12345, MI #001<br>
+                            <code>CAPA Number</code> → CAPA-001<br>
+                            <code>QE</code> → QE-xxx (abbreviations work!)<br>
+                            <code>XYZ ID</code> → XYZ-12345<br>
+                            <code>ABC123 Code</code> → Any ABC123 reference
                         </div>
                         <div class="help-item">
-                            <strong>Standard Fields:</strong>
+                            <strong>📧 Email Fields:</strong>
                             <code>Subject</code> → Email subject line<br>
-                            <code>From</code> → Sender address<br>
-                            <code>To</code> → Recipient address<br>
+                            <code>From</code> / <code>Sender</code> → Sender address<br>
+                            <code>To</code> / <code>Recipient</code> → Recipient<br>
                             <code>Date</code> → Email date<br>
                             <code>Body</code> → Email body text
                         </div>
                         <div class="help-item">
-                            <strong>Smart Extraction:</strong>
-                            <code>Amount</code> → Extracts $100, €50<br>
+                            <strong>🎯 Smart Extraction:</strong>
+                            <code>Amount</code> / <code>Cost</code> → $100, €50<br>
                             <code>Priority</code> → High/Normal/Low<br>
                             <code>Status</code> → Complete/Pending/Open<br>
-                            <code>Lot #</code> → Lot/Batch numbers<br>
-                            <code>Invoice #</code> → Invoice numbers
+                            <code>Due Date</code> → Extracts dates<br>
+                            <code>Anything</code> → Searches for keyword!
                         </div>
                     </div>
-                    <p class="help-note">💡 Any text with <code>#</code> will look for that prefix + number in emails!</p>
+                    <p class="help-note">💡 <strong>The Magic:</strong> Type ANY column like <code>Room Number</code>, <code>Ticket ID</code>, <code>PRT #</code> - it will find and extract those values automatically! No setup needed.</p>
                 </div>
             </div>
 

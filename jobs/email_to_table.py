@@ -212,124 +212,76 @@ def extract_email_fields(email_data: Dict) -> Dict[str, str]:
 
 def smart_search_column(email_data: Dict, column_name: str) -> str:
     """
-    Smart search for a column value by searching the email content.
-    Uses the column name as a keyword to find related content.
+    FULLY INTELLIGENT column extraction - works with ANY column name!
     
-    INTELLIGENT EXTRACTION:
-    - "MI #" → Extracts MI-12345, MI #12345, MI: 12345
-    - "CAPA #" → Extracts CAPA-001, CAPA #001
-    - "QE" → Extracts QE numbers
-    - "Work Order" → Extracts WO-xxx, Work Order: xxx
+    No hardcoded prefixes - automatically detects patterns:
+    - "Building Number" → finds Building + numbers
+    - "Work Order #" → finds Work Order + numbers  
+    - "XYZ ID" → finds XYZ + numbers
+    - "ABC123" → finds ABC123 patterns
+    - ANY "Something Number" or "Something #" → extracts numbers
     
     Args:
         email_data: Email dict
-        column_name: Column name to search for
+        column_name: ANY column name the user types
     
     Returns:
-        Extracted value(s)
+        Intelligently extracted value(s)
     """
-    # Get individual content parts
+    # Get all content from email
     subject = str(email_data.get("subject", ""))
     body = str(email_data.get("body", ""))
     from_addr = str(email_data.get("from", ""))
     to_addr = str(email_data.get("to", ""))
     attachments = " ".join(email_data.get("attachments", []))
+    attachment_text = str(email_data.get("attachment_text", ""))
     
-    # Combine all content
-    all_content = f"{subject} {body} {from_addr} {to_addr} {attachments}"
+    all_content = f"{subject}\n{body}\n{from_addr}\n{to_addr}\n{attachments}\n{attachment_text}"
     all_content_lower = all_content.lower()
     
     column_lower = column_name.lower().strip()
-    column_clean = re.sub(r'[#\s]+', '', column_lower)  # Remove # and spaces
     
     # ============================================================
-    # INTELLIGENT PREFIX + NUMBER EXTRACTION
-    # Handles: MI #, MM #, CAPA #, QE, EQQ, PO, WO, etc.
+    # STEP 1: DETECT IF THIS IS A "NUMBER" COLUMN
+    # Triggers on: #, Number, No, ID, Num, Code, Ref at end
     # ============================================================
     
-    # Common prefixes that are followed by numbers
-    known_prefixes = {
-        'mi': ['MI', 'mi'],
-        'mm': ['MM', 'mm'],
-        'capa': ['CAPA', 'capa', 'Capa'],
-        'qe': ['QE', 'qe', 'Qe'],
-        'eqq': ['EQQ', 'eqq', 'Eqq'],
-        'po': ['PO', 'po', 'P.O.', 'P.O'],
-        'wo': ['WO', 'wo', 'Work Order', 'work order', 'WorkOrder'],
-        'inv': ['INV', 'inv', 'Invoice', 'invoice'],
-        'ref': ['REF', 'ref', 'Reference', 'reference', 'Ref'],
-        'ticket': ['Ticket', 'ticket', 'TICKET', 'TKT'],
-        'case': ['Case', 'case', 'CASE'],
-        'cr': ['CR', 'cr', 'Change Request'],
-        'pr': ['PR', 'pr', 'Purchase Request'],
-        'sr': ['SR', 'sr', 'Service Request'],
-        'prt': ['PRT', 'prt'],
-        'ncr': ['NCR', 'ncr', 'Non-Conformance'],
-        'car': ['CAR', 'car', 'Corrective Action'],
-        'deviation': ['DEV', 'dev', 'Deviation', 'deviation'],
-        'lot': ['LOT', 'lot', 'Lot', 'Batch', 'batch'],
-        'batch': ['BATCH', 'batch', 'Batch'],
-        'order': ['Order', 'order', 'ORDER'],
-    }
+    number_indicators = ['#', 'number', 'no.', 'no', 'id', 'num', 'code', 'ref', 'reference']
+    is_number_column = any(ind in column_lower for ind in number_indicators)
     
-    # Check if column matches any known prefix
-    prefix_match = None
-    for prefix_key, variations in known_prefixes.items():
-        if column_clean == prefix_key or column_lower.replace('#', '').replace(' ', '') == prefix_key:
-            prefix_match = variations
-            break
-        # Also check if column starts with the prefix
-        if column_clean.startswith(prefix_key):
-            prefix_match = variations
-            break
+    # Also check if column is short uppercase (likely abbreviation like MI, QE, MM)
+    column_stripped = re.sub(r'[#\s\.\-_]+', '', column_name)
+    is_abbreviation = len(column_stripped) <= 5 and column_stripped.isupper()
     
-    # If we found a prefix, extract all matching numbers
-    if prefix_match:
-        extracted_numbers = []
+    if is_number_column or is_abbreviation:
+        # Extract the PREFIX part (the identifier before "number", "#", etc.)
+        prefix = column_name
         
-        for prefix in prefix_match:
-            # Pattern: PREFIX followed by optional separator then number
-            # Matches: MI-12345, MI #12345, MI: 12345, MI12345, MI 12345
-            patterns = [
-                rf'{re.escape(prefix)}\s*[#:\-_]?\s*(\d+[\-\d]*)',  # MI #12345, MI-12345
-                rf'{re.escape(prefix)}(\d+)',  # MI12345
-            ]
-            
-            for pattern in patterns:
-                matches = re.findall(pattern, all_content, re.IGNORECASE)
-                for match in matches:
-                    full_ref = f"{prefix.upper()}-{match}" if not match.startswith('-') else f"{prefix.upper()}{match}"
-                    # Clean up the reference
-                    full_ref = re.sub(r'-+', '-', full_ref)  # Remove double dashes
-                    if full_ref not in extracted_numbers:
-                        extracted_numbers.append(full_ref)
+        # Remove common suffixes to get the core prefix
+        for suffix in ['number', 'num', '#', 'no.', 'no', 'id', 'code', 'ref', 'reference']:
+            prefix = re.sub(rf'\s*{re.escape(suffix)}\s*$', '', prefix, flags=re.IGNORECASE)
         
-        if extracted_numbers:
-            # Return all found numbers, separated by semicolons
-            return "; ".join(extracted_numbers[:5])  # Limit to first 5
-    
-    # ============================================================
-    # GENERIC "PREFIX #" PATTERN
-    # If column contains # sign, extract PREFIX + NUMBER
-    # ============================================================
-    
-    if '#' in column_name:
-        # Extract the prefix part (before #)
-        prefix = column_name.split('#')[0].strip()
+        prefix = prefix.strip()
+        
+        # If we have a prefix, search for PREFIX + NUMBER patterns
         if prefix:
-            # Find PREFIX followed by number
-            pattern = rf'{re.escape(prefix)}\s*[#:\-]?\s*(\d+[\-\d]*)'
-            matches = re.findall(pattern, all_content, re.IGNORECASE)
-            if matches:
-                results = [f"{prefix.upper()}-{m}" for m in matches[:5]]
-                return "; ".join(results)
+            extracted = extract_prefix_numbers(prefix, all_content)
+            if extracted:
+                return extracted
+        
+        # If no prefix (column was just "#" or "Number"), extract ALL numbers
+        if not prefix or prefix in ['#', '']:
+            all_numbers = re.findall(r'\b(\d{4,})\b', all_content)
+            if all_numbers:
+                unique_nums = list(dict.fromkeys(all_numbers))[:5]
+                return "; ".join(unique_nums)
     
     # ============================================================
-    # STANDARD FIELD EXTRACTION (Date, Amount, Status, etc.)
+    # STEP 2: STANDARD FIELD EXTRACTION
     # ============================================================
     
-    # Date columns - extract dates from content
-    if any(kw in column_lower for kw in ['date', 'time', 'when', 'received', 'sent']):
+    # Date columns
+    if any(kw in column_lower for kw in ['date', 'time', 'when', 'received', 'sent', 'due']):
         email_date = email_data.get("date", "")
         if email_date:
             return str(email_date)
@@ -338,8 +290,8 @@ def smart_search_column(email_data: Dict, column_name: str) -> str:
         if match:
             return match.group()
     
-    # Amount columns - extract currency
-    if any(kw in column_lower for kw in ['amount', 'total', 'price', 'cost', 'qty', 'quantity']):
+    # Amount/Money columns
+    if any(kw in column_lower for kw in ['amount', 'total', 'price', 'cost', 'qty', 'quantity', 'dollar', 'payment']):
         amount_pattern = r'[\$€£]\s*[\d,]+\.?\d*|\d{1,3}(?:,\d{3})*(?:\.\d{2})?'
         match = re.search(amount_pattern, all_content)
         if match:
@@ -347,47 +299,129 @@ def smart_search_column(email_data: Dict, column_name: str) -> str:
     
     # Priority columns
     if any(kw in column_lower for kw in ['priority', 'urgent', 'importance']):
-        if any(kw in all_content_lower for kw in ['urgent', 'asap', 'critical', 'high priority', 'important']):
+        if any(kw in all_content_lower for kw in ['urgent', 'asap', 'critical', 'high priority', 'important', 'immediately']):
             return "High"
-        elif any(kw in all_content_lower for kw in ['low priority', 'fyi', 'when possible']):
+        elif any(kw in all_content_lower for kw in ['low priority', 'fyi', 'when possible', 'no rush']):
             return "Low"
         return "Normal"
     
     # Status columns
-    if 'status' in column_lower:
-        if any(kw in all_content_lower for kw in ['complete', 'done', 'finished', 'resolved', 'closed']):
+    if any(kw in column_lower for kw in ['status', 'state']):
+        if any(kw in all_content_lower for kw in ['complete', 'done', 'finished', 'resolved', 'closed', 'approved']):
             return "Complete"
-        elif any(kw in all_content_lower for kw in ['pending', 'waiting', 'in progress', 'ongoing']):
+        elif any(kw in all_content_lower for kw in ['pending', 'waiting', 'in progress', 'ongoing', 'review']):
             return "Pending"
-        elif any(kw in all_content_lower for kw in ['open', 'new', 'unread']):
+        elif any(kw in all_content_lower for kw in ['open', 'new', 'unread', 'submitted']):
             return "Open"
+        elif any(kw in all_content_lower for kw in ['reject', 'denied', 'cancel']):
+            return "Rejected"
     
     # ============================================================
-    # GENERIC EXTRACTION: Column Name followed by value
+    # STEP 3: LOOK FOR "COLUMN_NAME: VALUE" PATTERNS
     # ============================================================
     
-    # Look for "ColumnName: value" or "ColumnName - value" patterns
-    extract_pattern = rf'{re.escape(column_lower)}\s*[:\-=]\s*([^\n,;]+)'
+    # Try exact column name match first
+    extract_pattern = rf'{re.escape(column_name)}\s*[:\-=]\s*([^\n,;]+)'
     match = re.search(extract_pattern, all_content, re.IGNORECASE)
     if match:
         value = match.group(1).strip()
-        if len(value) < 100:
+        if 0 < len(value) < 100:
             return value
     
+    # Try variations (singular/plural, with/without spaces)
+    column_words = column_name.split()
+    if len(column_words) >= 1:
+        # Try first word
+        first_word = column_words[0]
+        if len(first_word) >= 2:
+            pattern = rf'{re.escape(first_word)}\s*[:\-=]\s*([^\n,;]+)'
+            match = re.search(pattern, all_content, re.IGNORECASE)
+            if match:
+                value = match.group(1).strip()
+                if 0 < len(value) < 100:
+                    return value
+    
     # ============================================================
-    # KEYWORD EXISTENCE CHECK
+    # STEP 4: KEYWORD EXISTENCE CHECK (Yes/No)
     # ============================================================
     
-    # Word boundary search
-    pattern = r'\b' + re.escape(column_lower) + r'\b'
-    if re.search(pattern, all_content_lower):
-        return "Yes"
+    # Word boundary search for the column name
+    search_terms = [column_name]
+    # Also try individual words if column has multiple words
+    if ' ' in column_name:
+        search_terms.extend(column_name.split())
     
-    # Partial match for abbreviations
-    if len(column_lower) >= 2 and column_lower in all_content_lower:
-        return "Yes"
+    for term in search_terms:
+        if len(term) >= 2:
+            pattern = r'\b' + re.escape(term.lower()) + r'\b'
+            if re.search(pattern, all_content_lower):
+                return "Yes"
     
     return ""  # Not found
+
+
+def extract_prefix_numbers(prefix: str, content: str) -> str:
+    """
+    Extract all numbers associated with a prefix from content.
+    
+    Works with ANY prefix:
+    - "MI" → finds MI-12345, MI #001, MI: 123, MI123
+    - "Building" → finds Building 5, Building-12, Building: 100
+    - "Work Order" → finds Work Order 12345, WO-001
+    
+    Args:
+        prefix: The identifier prefix (e.g., "MI", "Building", "Work Order")
+        content: The email content to search
+    
+    Returns:
+        Semicolon-separated list of found references
+    """
+    extracted = []
+    prefix_clean = prefix.strip()
+    
+    # Build search variations
+    variations = [prefix_clean]
+    
+    # Add common abbreviations for multi-word prefixes
+    if ' ' in prefix_clean:
+        words = prefix_clean.split()
+        # Add acronym (first letters)
+        acronym = ''.join(w[0].upper() for w in words if w)
+        if len(acronym) >= 2:
+            variations.append(acronym)
+        # Add first word
+        variations.append(words[0])
+    
+    # Search for each variation
+    for var in variations:
+        # Multiple patterns to catch different formats
+        patterns = [
+            # PREFIX followed by separator then numbers: MI-12345, MI #001, MI: 123
+            rf'(?<![A-Za-z]){re.escape(var)}\s*[#:\-_/\.]*\s*(\d[\d\-]*\d|\d+)',
+            # PREFIX immediately followed by numbers: MI12345
+            rf'(?<![A-Za-z]){re.escape(var)}(\d+)',
+        ]
+        
+        for pattern in patterns:
+            try:
+                matches = re.findall(pattern, content, re.IGNORECASE)
+                for match in matches:
+                    # Clean and format the result
+                    num = match.strip('-').strip()
+                    if num and len(num) >= 1:
+                        # Format as PREFIX-NUMBER
+                        formatted = f"{var.upper()}-{num}"
+                        formatted = re.sub(r'-+', '-', formatted)  # Clean double dashes
+                        if formatted not in extracted:
+                            extracted.append(formatted)
+            except re.error:
+                continue
+    
+    # Return unique results, limited to 10
+    if extracted:
+        return "; ".join(extracted[:10])
+    
+    return ""
 
 
 def email_to_record(
