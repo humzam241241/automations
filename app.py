@@ -233,29 +233,48 @@ def open_file_dialog():
         data = request.json
         dialog_type = data.get('type', 'file')
         file_types = data.get('file_types', [])
+        initial_dir = data.get('initial_dir', '')
         
         # Create hidden root window
         root = tk.Tk()
         root.withdraw()
         root.attributes('-topmost', True)
+        root.focus_force()
+        
+        # Set initial directory
+        if not initial_dir:
+            # Default to Downloads folder
+            initial_dir = str(Path.home() / 'Downloads')
         
         if dialog_type == 'directory':
-            # Folder picker
+            # Folder picker with clear title
             path = filedialog.askdirectory(
-                title='Select Folder',
+                title='Select Folder (Choose the folder containing your files)',
+                initialdir=initial_dir,
                 mustexist=True
             )
         else:
-            # File picker
+            # File picker with all important types visible
             if file_types:
                 filetypes = [
                     (ft['name'], ft['pattern']) for ft in file_types
-                ] + [('All Files', '*.*')]
+                ]
             else:
-                filetypes = [('All Files', '*.*')]
+                # Default: show all important file types
+                filetypes = [
+                    ('Email Files', '*.eml *.msg'),
+                    ('Excel Files', '*.xlsx *.xls'),
+                    ('CSV Files', '*.csv'),
+                    ('PDF Files', '*.pdf'),
+                    ('Text Files', '*.txt'),
+                ]
+            
+            # Always add "All Files" option at the end
+            filetypes.append(('All Files', '*.*'))
             
             path = filedialog.askopenfilename(
                 title='Select File',
+                initialdir=initial_dir,
                 filetypes=filetypes
             )
         
