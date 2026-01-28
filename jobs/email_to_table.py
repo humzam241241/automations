@@ -172,16 +172,141 @@ def extract_email_fields(email_data: Dict) -> Dict[str, str]:
         email_data: Dict with keys like subject, from, to, date, body, attachments
     
     Returns:
-        Dict of standard fields
+        Dict of standard fields (case-insensitive mapping)
     """
-    return {
+    # Build both exact and lowercase versions for flexible matching
+    standard = {
+        # Standard casing
         "Subject": email_data.get("subject", ""),
         "From": email_data.get("from", ""),
         "To": email_data.get("to", ""),
         "Date": email_data.get("date", ""),
         "Body": email_data.get("body", ""),
         "Attachments": "; ".join(email_data.get("attachments", [])),
+        # Lowercase versions
+        "subject": email_data.get("subject", ""),
+        "from": email_data.get("from", ""),
+        "to": email_data.get("to", ""),
+        "date": email_data.get("date", ""),
+        "body": email_data.get("body", ""),
+        "attachments": "; ".join(email_data.get("attachments", [])),
+        # Common variations
+        "Sender": email_data.get("from", ""),
+        "sender": email_data.get("from", ""),
+        "From Address": email_data.get("from", ""),
+        "Recipient": email_data.get("to", ""),
+        "recipient": email_data.get("to", ""),
+        "To Address": email_data.get("to", ""),
+        "Received": email_data.get("date", ""),
+        "received": email_data.get("date", ""),
+        "Sent": email_data.get("date", ""),
+        "sent": email_data.get("date", ""),
+        "Message": email_data.get("body", ""),
+        "message": email_data.get("body", ""),
+        "Content": email_data.get("body", ""),
+        "content": email_data.get("body", ""),
+        "Email Body": email_data.get("body", ""),
     }
+    return standard
+
+
+def smart_search_column(email_data: Dict, column_name: str) -> str:
+    """
+    Smart search for a column value by searching the email content.
+    Uses the column name as a keyword to find related content.
+    
+    Args:
+        email_data: Email dict
+        column_name: Column name to search for
+    
+    Returns:
+        Extracted value or 'Yes'/'No' depending on match
+    """
+    # Get individual content parts
+    subject = str(email_data.get("subject", ""))
+    body = str(email_data.get("body", ""))
+    from_addr = str(email_data.get("from", ""))
+    to_addr = str(email_data.get("to", ""))
+    attachments = " ".join(email_data.get("attachments", []))
+    
+    # Combine all content
+    all_content = f"{subject} {body} {from_addr} {to_addr} {attachments}"
+    all_content_lower = all_content.lower()
+    
+    column_lower = column_name.lower().strip()
+    
+    # SPECIAL CASES: Extract actual data for common column types
+    
+    # Date columns - extract dates from content
+    if any(kw in column_lower for kw in ['date', 'time', 'when', 'received', 'sent']):
+        # Return the email date
+        email_date = email_data.get("date", "")
+        if email_date:
+            return str(email_date)
+        # Try to find dates in body
+        date_pattern = r'\d{1,2}[/\-]\d{1,2}[/\-]\d{2,4}|\d{4}[/\-]\d{1,2}[/\-]\d{1,2}'
+        match = re.search(date_pattern, all_content)
+        if match:
+            return match.group()
+    
+    # Number/Amount columns - extract numbers
+    if any(kw in column_lower for kw in ['amount', 'total', 'price', 'cost', 'number', 'qty', 'quantity', '#']):
+        # Look for currency amounts
+        amount_pattern = r'[\$€£]\s*[\d,]+\.?\d*|\d{1,3}(?:,\d{3})*(?:\.\d{2})?'
+        match = re.search(amount_pattern, all_content)
+        if match:
+            return match.group()
+    
+    # ID/Reference columns - extract IDs
+    if any(kw in column_lower for kw in ['id', 'ref', 'reference', 'ticket', 'case', 'order', 'po', 'invoice']):
+        # Look for reference numbers
+        ref_pattern = rf'{re.escape(column_lower)}\s*[:#]?\s*([A-Z0-9\-]+)'
+        match = re.search(ref_pattern, all_content, re.IGNORECASE)
+        if match:
+            return match.group(1)
+        # General alphanumeric ID pattern
+        id_pattern = r'[A-Z]{2,5}[-#]?\d{4,10}'
+        match = re.search(id_pattern, all_content)
+        if match:
+            return match.group()
+    
+    # Priority/Status columns - look for keywords
+    if any(kw in column_lower for kw in ['priority', 'urgent', 'importance']):
+        if any(kw in all_content_lower for kw in ['urgent', 'asap', 'critical', 'high priority', 'important']):
+            return "High"
+        elif any(kw in all_content_lower for kw in ['low priority', 'fyi', 'when possible']):
+            return "Low"
+        else:
+            return "Normal"
+    
+    if any(kw in column_lower for kw in ['status']):
+        if any(kw in all_content_lower for kw in ['complete', 'done', 'finished', 'resolved', 'closed']):
+            return "Complete"
+        elif any(kw in all_content_lower for kw in ['pending', 'waiting', 'in progress', 'ongoing']):
+            return "Pending"
+        elif any(kw in all_content_lower for kw in ['open', 'new', 'unread']):
+            return "Open"
+    
+    # YES/NO detection - search for the column keyword
+    # Look for column name followed by colon and value
+    extract_pattern = rf'{re.escape(column_lower)}\s*[:\-=]\s*([^\n,;]+)'
+    match = re.search(extract_pattern, all_content_lower, re.IGNORECASE)
+    if match:
+        value = match.group(1).strip()
+        if len(value) < 100:
+            return value.title()  # Return extracted value
+    
+    # Word boundary search - just check if keyword exists
+    pattern = r'\b' + re.escape(column_lower) + r'\b'
+    if re.search(pattern, all_content_lower):
+        return "Yes"  # Found the keyword
+    
+    # Check for partial matches (column might be abbreviation)
+    if len(column_lower) >= 3:
+        if column_lower in all_content_lower:
+            return "Yes"
+    
+    return ""  # Not found
 
 
 def email_to_record(
@@ -213,18 +338,50 @@ def email_to_record(
     
     # Build record dict based on schema order
     record = {}
+    explanations = dict(rule_explanations) if rule_explanations else {}
+    
     for col in schema.get("columns", []):
         col_name = col.get("name", col.get("header", ""))
         
-        # Priority: standard fields > rule results > empty
-        if col_name in standard_fields:
+        # Priority 1: Standard email fields (Subject, From, To, Date, Body, etc.)
+        if col_name in standard_fields and standard_fields[col_name]:
             record[col_name] = standard_fields[col_name]
-        elif col_name in rule_results:
+            if explain:
+                explanations[col_name] = {
+                    "matched": True,
+                    "match_type": "standard_field",
+                    "matched_term": col_name,
+                    "search_in": ["email_headers"],
+                    "snippet": str(standard_fields[col_name])[:50],
+                }
+        
+        # Priority 2: Explicit rule results
+        elif col_name in rule_results and rule_results[col_name]:
             record[col_name] = rule_results[col_name]
+        
+        # Priority 3: Smart search - use column name as keyword
         else:
-            record[col_name] = ""
+            smart_value = smart_search_column(email_data, col_name)
+            record[col_name] = smart_value
+            
+            if explain and smart_value:
+                explanations[col_name] = {
+                    "matched": True,
+                    "match_type": "smart_search",
+                    "matched_term": col_name,
+                    "search_in": ["all"],
+                    "snippet": f"Found '{col_name}' in email content",
+                }
+            elif explain:
+                explanations[col_name] = {
+                    "matched": False,
+                    "match_type": None,
+                    "matched_term": None,
+                    "search_in": ["all"],
+                    "snippet": None,
+                }
     
-    return record, rule_explanations
+    return record, explanations
 
 
 def email_to_row(
