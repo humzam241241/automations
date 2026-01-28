@@ -17,6 +17,7 @@ def extract_text_from_file(file_path: str) -> str:
     - Word documents (.docx)
     - Text files (.txt)
     - CSV files (.csv)
+    - Excel files (.xlsx, .xls)
     
     Args:
         file_path: Path to the file
@@ -36,6 +37,8 @@ def extract_text_from_file(file_path: str) -> str:
             return extract_docx_text(file_path)
         elif ext == '.doc':
             return extract_doc_text(file_path)
+        elif ext in ['.xlsx', '.xls']:
+            return extract_excel_text(file_path)
         elif ext in ['.txt', '.csv', '.log', '.md']:
             return extract_plain_text(file_path)
         else:
@@ -103,6 +106,126 @@ def extract_doc_text(file_path: str) -> str:
     return ""
 
 
+def extract_excel_text(file_path: str) -> str:
+    """
+    Extract text from Excel files (.xlsx, .xls).
+    Converts tabular data to readable text with clear column:value format.
+    """
+    try:
+        from openpyxl import load_workbook
+        
+        wb = load_workbook(file_path, read_only=True, data_only=True)
+        text_parts = []
+        
+        for sheet_name in wb.sheetnames:
+            ws = wb[sheet_name]
+            rows = list(ws.iter_rows(values_only=True))
+            
+            if not rows:
+                continue
+            
+            # First row as headers
+            headers = [str(h).strip() if h else f"Col{i}" for i, h in enumerate(rows[0])]
+            
+            text_parts.append(f"=== Sheet: {sheet_name} ===")
+            text_parts.append("Headers: " + " | ".join(headers))
+            
+            # Each data row - format as "Header: Value" pairs for better extraction
+            for row_idx, row in enumerate(rows[1:], start=1):
+                row_text_parts = []
+                for i, val in enumerate(row):
+                    if val is not None and str(val).strip():
+                        header = headers[i] if i < len(headers) else f"Col{i}"
+                        row_text_parts.append(f"{header}: {val}")
+                
+                if row_text_parts:
+                    text_parts.append(f"Row {row_idx}: " + " | ".join(row_text_parts))
+        
+        wb.close()
+        return "\n".join(text_parts)
+    
+    except ImportError:
+        print("openpyxl not installed. Install with: pip install openpyxl")
+        return ""
+    except Exception as e:
+        print(f"Excel extraction error: {e}")
+        return ""
+
+
+def extract_excel_rows(file_path: str) -> list:
+    """
+    Extract Excel data as list of dicts (one dict per row).
+    This is used when we want to EXPAND an email with Excel attachment
+    into multiple records.
+    
+    Returns:
+        List of dicts, each dict represents a row with header:value pairs
+    """
+    try:
+        from openpyxl import load_workbook
+        
+        wb = load_workbook(file_path, read_only=True, data_only=True)
+        all_rows = []
+        
+        for sheet_name in wb.sheetnames:
+            ws = wb[sheet_name]
+            rows = list(ws.iter_rows(values_only=True))
+            
+            if len(rows) < 2:  # Need headers + at least 1 data row
+                continue
+            
+            # First row as headers
+            headers = [str(h).strip() if h else f"Col{i}" for i, h in enumerate(rows[0])]
+            
+            # Each data row becomes a dict
+            for row in rows[1:]:
+                row_dict = {"_sheet": sheet_name}
+                has_data = False
+                
+                for i, val in enumerate(row):
+                    header = headers[i] if i < len(headers) else f"Col{i}"
+                    if val is not None:
+                        row_dict[header] = str(val).strip()
+                        if str(val).strip():
+                            has_data = True
+                    else:
+                        row_dict[header] = ""
+                
+                if has_data:  # Only include rows with at least some data
+                    all_rows.append(row_dict)
+        
+        wb.close()
+        return all_rows
+    
+    except ImportError:
+        return []
+    except Exception as e:
+        print(f"Excel row extraction error: {e}")
+        return []
+
+
+def extract_excel_rows_from_bytes(data: bytes) -> list:
+    """Extract Excel rows from bytes (for email attachments)."""
+    import tempfile
+    
+    try:
+        with tempfile.NamedTemporaryFile(suffix='.xlsx', delete=False) as tmp:
+            tmp.write(data)
+            tmp_path = tmp.name
+        
+        rows = extract_excel_rows(tmp_path)
+        
+        try:
+            os.unlink(tmp_path)
+        except:
+            pass
+        
+        return rows
+    except Exception as e:
+        print(f"Excel bytes extraction error: {e}")
+        return []
+
+
 def extract_plain_text(file_path: str) -> str:
     """Extract text from a plain text file."""
     try:
@@ -138,7 +261,8 @@ def extract_attachment_from_bytes(data: bytes, filename: str) -> str:
     
     ext = Path(filename).suffix.lower()
     
-    if ext not in ['.pdf', '.docx', '.txt', '.csv']:
+    # Supported file types for text extraction
+    if ext not in ['.pdf', '.docx', '.txt', '.csv', '.xlsx', '.xls']:
         return ""
     
     try:

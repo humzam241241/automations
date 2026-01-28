@@ -50,6 +50,12 @@ Search for **"amount"** and find:
 - Columns detected automatically
 - No manual typing needed!
 
+### ⚡ Confidence + AI Assistance
+- Each extracted column now emits a **confidence score (0-10)** so you can see how reliable the value was.
+- The UI log surfaces the source and confidence of each column after a run.
+- Enable **AI assistance** in the profile modal to have the low-confidence columns double-checked by an online helper. Control the threshold with the slider and set `EMAIL_AI_ENDPOINT` plus `EMAIL_AI_API_KEY` (if required) in your environment or `.env`.
+- Click **“Suggest columns from emails”** in the column builder to scan your sample emails for recurring headings and add them with one click. Suggestions include synonyms and example text.
+
 ## 🚀 Quick Start
 
 ### Option 1: Use the GUI (Recommended)

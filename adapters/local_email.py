@@ -11,9 +11,17 @@ from typing import Dict, List
 
 # Import attachment reader
 try:
-    from .attachment_reader import extract_text_from_file, extract_attachment_from_bytes
+    from .attachment_reader import (
+        extract_text_from_file, 
+        extract_attachment_from_bytes,
+        extract_excel_rows_from_bytes
+    )
 except ImportError:
-    from adapters.attachment_reader import extract_text_from_file, extract_attachment_from_bytes
+    from adapters.attachment_reader import (
+        extract_text_from_file, 
+        extract_attachment_from_bytes,
+        extract_excel_rows_from_bytes
+    )
 
 
 class LocalEmailAdapter:
@@ -218,6 +226,7 @@ class LocalEmailAdapter:
         # Extract attachments and their text content
         attachments = []
         attachment_texts = []
+        excel_rows = []  # NEW: Store Excel data as structured rows
         
         for part in msg.walk():
             filename = part.get_filename()
@@ -227,7 +236,27 @@ class LocalEmailAdapter:
                 # Extract text from attachment if enabled
                 if self.extract_attachments:
                     ext = Path(filename).suffix.lower()
-                    if ext in ['.pdf', '.docx', '.txt', '.csv']:
+                    
+                    # For Excel files, extract both text AND structured rows
+                    if ext in ['.xlsx', '.xls']:
+                        try:
+                            payload = part.get_payload(decode=True)
+                            if payload:
+                                # Get text version
+                                text = extract_attachment_from_bytes(payload, filename)
+                                if text:
+                                    attachment_texts.append(f"[{filename}]:\n{text}")
+                                
+                                # Also get structured row data
+                                rows = extract_excel_rows_from_bytes(payload)
+                                if rows:
+                                    for row in rows:
+                                        row["_source_file"] = filename
+                                    excel_rows.extend(rows)
+                        except Exception as e:
+                            print(f"Could not extract from Excel {filename}: {e}")
+                    
+                    elif ext in ['.pdf', '.docx', '.txt', '.csv']:
                         try:
                             payload = part.get_payload(decode=True)
                             if payload:
@@ -246,6 +275,7 @@ class LocalEmailAdapter:
             "body": body,
             "attachments": attachments,
             "attachment_text": attachment_texts,
+            "excel_rows": excel_rows,  # NEW: Structured Excel data
             "source_file": source_path,
         }
     

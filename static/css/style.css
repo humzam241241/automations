@@ -938,6 +938,77 @@ button {
     transform: translateY(-1px);
 }
 
+/* Suggested columns */
+.column-suggestion-toolbar {
+    display: flex;
+    gap: 10px;
+    align-items: center;
+    margin: 12px 0;
+}
+
+.column-suggestion-toolbar small {
+    color: #555;
+    font-size: 12px;
+}
+
+.suggestion-panel {
+    border: 1px solid var(--gray-200);
+    border-radius: 12px;
+    padding: 12px;
+    background: #fff;
+    max-height: 240px;
+    overflow-y: auto;
+    box-shadow: 0 1px 4px rgba(0,0,0,0.05);
+}
+
+.suggestion-item {
+    border: 1px solid var(--gray-200);
+    border-radius: 10px;
+    padding: 12px;
+    margin-bottom: 10px;
+    background: var(--gray-50);
+}
+
+.suggestion-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    margin-bottom: 6px;
+}
+
+.suggestion-name {
+    font-weight: 600;
+    color: var(--gray-800);
+}
+
+.suggestion-confidence {
+    font-size: 12px;
+    color: var(--gray-600);
+}
+
+.suggestion-body code {
+    display: block;
+    background: #fff;
+    padding: 6px 8px;
+    border-radius: 6px;
+    font-size: 12px;
+    margin-bottom: 6px;
+}
+
+.suggestion-synonyms span {
+    display: inline-block;
+    margin: 2px 4px 2px 0;
+    padding: 2px 8px;
+    background: var(--gray-100);
+    border-radius: 10px;
+    font-size: 11px;
+}
+
+.suggestion-item .btn-add-column {
+    margin-top: 8px;
+    padding: 6px 12px;
+}
+
 /* File hints */
 .file-hint {
     display: block;
@@ -1080,6 +1151,31 @@ button {
 
 .add-synonym-row input:nth-child(3) {
     flex: 1;
+}
+
+.ai-section {
+    border-top: 1px solid var(--gray-200);
+    padding-top: 12px;
+    margin-top: 12px;
+}
+
+.ai-section .ai-settings {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 8px;
+    align-items: center;
+    margin-top: 6px;
+}
+
+.ai-section input[type="range"] {
+    flex: 1 1 200px;
+    cursor: pointer;
+}
+
+.ai-section small {
+    flex-basis: 100%;
+    color: #666;
+    font-size: 11px;
 }
 
 /* Time type color */

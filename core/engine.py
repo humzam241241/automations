@@ -111,7 +111,13 @@ class ExecutionEngine:
         profile: Dict,
         explain: bool
     ) -> Tuple[List[Dict], List[Dict]]:
-        """Execute email_to_table job."""
+        """
+        Execute email_to_table job.
+        
+        KEY FEATURE: If an email has Excel attachments with multiple rows,
+        we EXPAND that email into multiple output records (one per Excel row).
+        This way an email with 10 order rows produces 10 output rows!
+        """
         schema = profile.get("schema", {})
         rules = profile.get("rules", [])
         use_synonyms = profile.get("use_synonyms", True)  # Default to True
@@ -123,16 +129,40 @@ class ExecutionEngine:
         explanations = []
         
         for email_data in emails:
-            record, explanation = email_to_record(
-                email_data, schema, rules, explain, use_synonyms, use_ai_flag, ai_threshold
-            )
-            if ai_enabled:
-                record, explanation = self._apply_ai_assist(
-                    record, explanation, email_data, ai_threshold
+            # Check if email has Excel rows we should expand
+            excel_rows = email_data.get("excel_rows", [])
+            
+            if excel_rows:
+                # EXPAND: Create one output record per Excel row
+                logging.info(f"Expanding email with {len(excel_rows)} Excel rows")
+                for row_data in excel_rows:
+                    # Merge email metadata with Excel row data
+                    # Excel row data takes priority (it's the actual data we want!)
+                    merged_data = dict(email_data)  # Copy email fields
+                    merged_data.update(row_data)    # Add/override with Excel columns
+                    
+                    record, explanation = email_to_record(
+                        merged_data, schema, rules, explain, use_synonyms, use_ai_flag, ai_threshold
+                    )
+                    if ai_enabled:
+                        record, explanation = self._apply_ai_assist(
+                            record, explanation, merged_data, ai_threshold
+                        )
+                    records.append(record)
+                    if explain:
+                        explanations.append(explanation)
+            else:
+                # Normal case: one email = one record
+                record, explanation = email_to_record(
+                    email_data, schema, rules, explain, use_synonyms, use_ai_flag, ai_threshold
                 )
-            records.append(record)
-            if explain:
-                explanations.append(explanation)
+                if ai_enabled:
+                    record, explanation = self._apply_ai_assist(
+                        record, explanation, email_data, ai_threshold
+                    )
+                records.append(record)
+                if explain:
+                    explanations.append(explanation)
         
         return records, explanations
 
