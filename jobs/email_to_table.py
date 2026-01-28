@@ -338,6 +338,42 @@ def smart_search_column(email_data: Dict, column_name: str, extract_type: str = 
                 return result
         return ""
     
+    elif extract_type == "mixed":
+        # USER WANTS MIXED ALPHANUMERIC - "4000390042 ZM03", "TORFER0048", "B89"
+        # This is for values like Order numbers, Equipment IDs, etc.
+        search_names = [column_name] + (column_synonyms if use_synonyms else [])
+        
+        for name in search_names:
+            # Try "ColumnName: value" pattern first
+            patterns = [
+                rf'{re.escape(name)}\s*[:\-=]\s*([A-Za-z0-9][\w\s\-]*)',
+                rf'{re.escape(name)}\t+([^\t\n]+)',
+            ]
+            for pattern in patterns:
+                try:
+                    match = re.search(pattern, all_content, re.IGNORECASE)
+                    if match:
+                        value = match.group(1).strip()
+                        # Clean up but keep alphanumeric + spaces
+                        value = re.sub(r'\s+', ' ', value).strip()
+                        if value and len(value) < 100:
+                            return value
+                except re.error:
+                    continue
+        
+        # Try to find alphanumeric patterns
+        alphanumeric_patterns = [
+            r'\b(\d{6,}\s*[A-Z]{2,}\d*)\b',  # 4000390042 ZM03
+            r'\b([A-Z]{2,}\d{3,})\b',  # TORFER0048
+            r'\b([A-Z]\d{2,})\b',  # B89
+        ]
+        for pattern in alphanumeric_patterns:
+            matches = re.findall(pattern, all_content)
+            if matches:
+                return "; ".join(list(dict.fromkeys(matches))[:5])
+        
+        return ""
+    
     elif extract_type == "date":
         # USER WANTS DATES ONLY
         email_date = email_data.get("date", "")

@@ -1091,3 +1091,13 @@ button {
     background: #4299e1;
     color: white;
 }
+
+/* Mixed type color */
+.column-tag[data-type="mixed"] {
+    border-color: #ed64a6;
+    background: linear-gradient(135deg, #fff5f7 0%, #fff 100%);
+}
+.column-tag[data-type="mixed"] .column-tag-type {
+    background: #ed64a6;
+    color: white;
+}

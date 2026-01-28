@@ -523,6 +523,7 @@ function renderColumns() {
     const typeLabels = {
         'auto': '🤖 Auto',
         'number': '🔢 Number',
+        'mixed': '🔤 Mixed',
         'text': '📝 Text',
         'date': '📅 Date',
         'time': '🕐 Time',
