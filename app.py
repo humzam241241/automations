@@ -225,30 +225,62 @@ def detect_columns():
 
 @app.route('/api/browse-directory', methods=['POST'])
 def browse_directory():
-    """Browse file system."""
+    """Browse file system - FULL ACCESS."""
     data = request.json
-    current_path = data.get('path', str(Path.home()))
+    current_path = data.get('path', '')
     
     try:
-        path = Path(current_path)
+        # If no path provided, start at user's home or desktop
+        if not current_path:
+            # Try Desktop first (most common place for files)
+            desktop = Path.home() / 'Desktop'
+            if desktop.exists():
+                path = desktop
+            else:
+                # Try OneDrive Desktop
+                onedrive_desktop = Path.home() / 'OneDrive - Sanofi' / 'Desktop'
+                if onedrive_desktop.exists():
+                    path = onedrive_desktop
+                else:
+                    path = Path.home()
+        else:
+            path = Path(current_path)
         
-        # Security: Don't allow going outside user's home directory
-        # Comment this out if you want full system access
-        # if not str(path).startswith(str(Path.home())):
-        #     path = Path.home()
-        
+        # Validate path exists
         if not path.exists():
-            path = Path.home()
+            # Try parent directory
+            path = path.parent if path.parent.exists() else Path.home()
         
-        if not path.is_dir():
+        # If path is a file, go to its directory
+        if path.is_file():
             path = path.parent
         
         items = []
         
-        # Add parent directory
-        if path != path.parent:
+        # Add drives on Windows (C:\, D:\, etc.)
+        if os.name == 'nt':
+            # Check if we're at the root level
+            if len(path.parts) <= 1:
+                # Show available drives
+                import string
+                for letter in string.ascii_uppercase:
+                    drive = Path(f'{letter}:\\')
+                    if drive.exists():
+                        try:
+                            items.append({
+                                'name': f'{letter}:\\ Drive',
+                                'path': str(drive),
+                                'type': 'drive',
+                                'size': '',
+                                'modified': ''
+                            })
+                        except:
+                            pass
+        
+        # Add parent directory (if not at root)
+        if path.parent != path:
             items.append({
-                'name': '..',
+                'name': '⬆️ Parent Folder',
                 'path': str(path.parent),
                 'type': 'directory',
                 'size': '',
@@ -259,11 +291,35 @@ def browse_directory():
         try:
             all_items = list(path.iterdir())
         except PermissionError:
-            return jsonify({'success': False, 'message': 'Permission denied'}), 403
+            return jsonify({
+                'success': False, 
+                'message': 'Permission denied. Try another folder.',
+                'current_path': str(path)
+            }), 403
+        except Exception as e:
+            return jsonify({
+                'success': False,
+                'message': f'Cannot access folder: {str(e)}',
+                'current_path': str(path)
+            }), 400
         
-        directories = sorted([item for item in all_items if item.is_dir()], key=lambda x: x.name.lower())
-        files = sorted([item for item in all_items if item.is_file()], key=lambda x: x.name.lower())
+        # Separate and sort
+        directories = []
+        files = []
         
+        for item in all_items:
+            try:
+                if item.is_dir():
+                    directories.append(item)
+                elif item.is_file():
+                    files.append(item)
+            except:
+                pass  # Skip items we can't access
+        
+        directories.sort(key=lambda x: x.name.lower())
+        files.sort(key=lambda x: x.name.lower())
+        
+        # Add directories
         for directory in directories:
             try:
                 items.append({
@@ -274,32 +330,47 @@ def browse_directory():
                     'modified': datetime.fromtimestamp(directory.stat().st_mtime).strftime('%Y-%m-%d %H:%M')
                 })
             except:
-                pass
+                pass  # Skip directories we can't stat
         
+        # Add files
         for file in files:
             try:
                 stat = file.stat()
-                size_mb = stat.st_size / (1024 * 1024)
+                size_bytes = stat.st_size
+                
+                # Format size
+                if size_bytes >= 1024 * 1024:
+                    size_str = f'{size_bytes / (1024 * 1024):.2f} MB'
+                elif size_bytes >= 1024:
+                    size_str = f'{size_bytes / 1024:.1f} KB'
+                else:
+                    size_str = f'{size_bytes} B'
+                
                 items.append({
                     'name': file.name,
                     'path': str(file),
                     'type': 'file',
                     'extension': file.suffix.lower(),
-                    'size': f'{size_mb:.2f} MB' if size_mb > 1 else f'{stat.st_size / 1024:.1f} KB',
+                    'size': size_str,
                     'modified': datetime.fromtimestamp(stat.st_mtime).strftime('%Y-%m-%d %H:%M')
                 })
             except:
-                pass
+                pass  # Skip files we can't stat
         
         return jsonify({
             'success': True,
             'current_path': str(path),
-            'items': items
+            'items': items,
+            'is_windows': os.name == 'nt'
         })
     
     except Exception as e:
         logging.error(f"Browse directory failed: {e}")
-        return jsonify({'success': False, 'message': str(e)}), 400
+        return jsonify({
+            'success': False, 
+            'message': str(e),
+            'current_path': str(Path.home())
+        }), 400
 
 # ===== MAIN =====
 

@@ -574,8 +574,20 @@ async function loadDirectory(path) {
             const contentDiv = document.getElementById('browserContent');
             contentDiv.innerHTML = '';
             
+            // If browsing for directory, add "Select This Folder" button at top
+            if (browserFileType === 'directory') {
+                const selectBtn = document.createElement('div');
+                selectBtn.style.cssText = 'padding: 16px; background: linear-gradient(135deg, #667eea 0%, #764ba2 100%); color: white; text-align: center; font-weight: 600; cursor: pointer; border-bottom: 2px solid #e2e8f0;';
+                selectBtn.innerHTML = '✓ Select This Folder';
+                selectBtn.onclick = () => selectDirectory(data.current_path);
+                contentDiv.appendChild(selectBtn);
+            }
+            
             if (data.items.length === 0) {
-                contentDiv.innerHTML = '<div style="padding: 20px; text-align: center; color: #999;">Empty directory</div>';
+                const emptyDiv = document.createElement('div');
+                emptyDiv.style.cssText = 'padding: 20px; text-align: center; color: #999;';
+                emptyDiv.textContent = 'Empty directory';
+                contentDiv.appendChild(emptyDiv);
                 return;
             }
             
@@ -583,19 +595,26 @@ async function loadDirectory(path) {
                 const itemDiv = document.createElement('div');
                 itemDiv.className = `browser-item ${item.type}`;
                 
+                // Set icons
                 let icon = '📁';
-                if (item.type === 'file') {
+                if (item.type === 'drive') {
+                    icon = '💾';
+                } else if (item.type === 'directory') {
+                    icon = '📁';
+                } else if (item.type === 'file') {
                     if (item.extension === '.xlsx') icon = '📊';
                     else if (item.extension === '.csv') icon = '📄';
                     else if (item.extension === '.eml') icon = '📧';
                     else if (item.extension === '.msg') icon = '✉️';
+                    else if (item.extension === '.txt') icon = '📝';
+                    else if (item.extension === '.pdf') icon = '📕';
                     else icon = '📄';
                 }
                 
                 itemDiv.innerHTML = `
                     <div class="browser-icon">${icon}</div>
                     <div class="browser-info">
-                        <div class="browser-name">${item.name}</div>
+                        <div class="browser-name">${escapeHtml(item.name)}</div>
                         <div class="browser-meta">
                             <span>${item.size}</span>
                             <span>${item.modified}</span>
@@ -603,22 +622,42 @@ async function loadDirectory(path) {
                     </div>
                 `;
                 
-                if (item.type === 'directory') {
-                    itemDiv.onclick = () => loadDirectory(item.path);
-                } else {
-                    // Only allow selecting appropriate file types
+                // Handle clicks
+                if (item.type === 'directory' || item.type === 'drive') {
+                    // Folders are always clickable for navigation
+                    itemDiv.style.cursor = 'pointer';
+                    
+                    // If browsing for directory, allow selecting folders
+                    if (browserFileType === 'directory') {
+                        // Double-click to select folder
+                        itemDiv.ondblclick = () => selectDirectory(item.path);
+                        // Single click to navigate into it
+                        itemDiv.onclick = () => loadDirectory(item.path);
+                        // Visual hint for selectable folders
+                        itemDiv.style.backgroundColor = '#f0f9ff';
+                        itemDiv.title = 'Double-click to select, single-click to open';
+                    } else {
+                        // Just navigate
+                        itemDiv.onclick = () => loadDirectory(item.path);
+                    }
+                } else if (item.type === 'file') {
+                    // Check if file type matches what we're looking for
                     let allowSelection = false;
+                    
                     if (browserFileType === 'excel_file' && item.extension === '.xlsx') {
                         allowSelection = true;
                     } else if (browserFileType === 'csv_file' && item.extension === '.csv') {
                         allowSelection = true;
-                    } else if (browserFileType === 'eml' && (item.extension === '.eml' || item.extension === '.msg')) {
-                        allowSelection = true;
+                    } else if (browserFileType === 'directory') {
+                        // When browsing for directory, don't allow file selection
+                        allowSelection = false;
                     }
                     
                     if (allowSelection) {
                         itemDiv.onclick = () => selectFile(item.path);
                         itemDiv.style.cursor = 'pointer';
+                        // Highlight selectable files
+                        itemDiv.style.backgroundColor = '#f0f9ff';
                     } else {
                         itemDiv.style.opacity = '0.5';
                         itemDiv.style.cursor = 'not-allowed';
@@ -628,19 +667,44 @@ async function loadDirectory(path) {
                 contentDiv.appendChild(itemDiv);
             });
         } else {
-            alert(`Failed to load directory: ${data.message}`);
+            // Show error but don't close the browser
+            log(`⚠ ${data.message}`, 'warning');
+            const contentDiv = document.getElementById('browserContent');
+            contentDiv.innerHTML = `
+                <div style="padding: 20px; text-align: center; color: #f56565;">
+                    <div style="font-size: 48px; margin-bottom: 10px;">⚠️</div>
+                    <div style="font-weight: bold; margin-bottom: 5px;">Cannot Access Folder</div>
+                    <div style="font-size: 14px;">${escapeHtml(data.message)}</div>
+                    <button onclick="loadDirectory('')" style="margin-top: 15px;" class="btn-secondary">
+                        Go to Home Folder
+                    </button>
+                </div>
+            `;
         }
     } catch (error) {
         console.error('Failed to load directory:', error);
-        alert('Failed to load directory');
+        log('✗ Failed to load directory', 'error');
     }
+}
+
+function escapeHtml(text) {
+    const div = document.createElement('div');
+    div.textContent = text;
+    return div.innerHTML;
 }
 
 function selectFile(path) {
     const input = document.getElementById(browserTargetInput);
     input.value = path;
     closeFileBrowser();
-    log(`Selected file: ${path}`, 'info');
+    log(`✓ Selected: ${path}`, 'info');
+}
+
+function selectDirectory(path) {
+    const input = document.getElementById(browserTargetInput);
+    input.value = path;
+    closeFileBrowser();
+    log(`✓ Selected folder: ${path}`, 'info');
 }
 
 function closeFileBrowser() {
