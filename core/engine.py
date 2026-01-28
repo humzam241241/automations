@@ -71,14 +71,30 @@ class ExecutionEngine:
         # 3. Convert records to headers + rows for output
         headers, rows = self._records_to_table(records, profile)
         
-        # 4. Write output
+        # 4. Check if should export to BI
+        output_config = profile.get("output", {})
+        should_export_bi = (
+            output_config.get("destination") == "bi_dashboard" or
+            output_config.get("also_export_bi", False) or
+            profile.get("input_source") in ["excel_file", "csv_file"]
+        )
+        
+        # 5. Write output
         output_result = self._write_output(profile, headers, rows)
+        
+        # 6. Generate BI dashboard if requested
+        if should_export_bi:
+            bi_result = self._export_bi_dashboard(profile, headers, rows)
+            output_result["bi_dashboard"] = bi_result
         
         result = {
             "status": "success",
             "emails_processed": len(emails),
             "records_produced": len(records),
             "output": output_result,
+            "headers": headers,
+            "rows": rows,
+            "profile_name": profile.get("name", "Unknown"),
         }
         
         if explain:
@@ -302,6 +318,44 @@ class ExecutionEngine:
             csv_path = email_selection.get("csv_path", "./emails.csv")
             return adapter.load_from_csv(csv_path)
         
+        elif input_source == "excel_file":
+            from adapters.excel_csv_email import ExcelCSVEmailAdapter
+            adapter = ExcelCSVEmailAdapter()
+            file_path = email_selection.get("file_path", "")
+            
+            if not file_path:
+                raise ValueError("Excel file path is required")
+            
+            headers, emails = adapter.load_from_excel(file_path)
+            
+            # If auto-detect enabled, update schema
+            if profile.get("auto_detect_columns") and headers:
+                profile["schema"] = {
+                    "columns": [{"name": h, "type": "text"} for h in headers]
+                }
+                logging.info(f"Auto-detected {len(headers)} columns from Excel")
+            
+            return emails
+        
+        elif input_source == "csv_file":
+            from adapters.excel_csv_email import ExcelCSVEmailAdapter
+            adapter = ExcelCSVEmailAdapter()
+            file_path = email_selection.get("file_path", "")
+            
+            if not file_path:
+                raise ValueError("CSV file path is required")
+            
+            headers, emails = adapter.load_from_csv(file_path)
+            
+            # If auto-detect enabled, update schema
+            if profile.get("auto_detect_columns") and headers:
+                profile["schema"] = {
+                    "columns": [{"name": h, "type": "text"} for h in headers]
+                }
+                logging.info(f"Auto-detected {len(headers)} columns from CSV")
+            
+            return emails
+        
         else:
             raise ValueError(f"Unknown input_source: {input_source}")
     
@@ -365,3 +419,36 @@ class ExecutionEngine:
         
         else:
             raise ValueError(f"Unknown destination: {destination}")
+    
+    def _export_bi_dashboard(self, profile: Dict, headers: List[str], rows: List[List[str]]) -> Dict:
+        """Export to BI dashboard."""
+        try:
+            from bi_dashboard_export import generate_dashboard, save_dashboard
+            import webbrowser
+            
+            profile_name = profile.get("name", "Dashboard")
+            html = generate_dashboard(headers, rows, profile_name)
+            
+            # Save dashboard
+            output_dir = Path("./output/dashboards")
+            output_dir.mkdir(parents=True, exist_ok=True)
+            
+            path = save_dashboard(html, output_dir)
+            
+            # Open in browser
+            webbrowser.open(f"file:///{path}")
+            
+            logging.info(f"BI Dashboard saved: {path}")
+            
+            return {
+                "enabled": True,
+                "path": path,
+                "opened_in_browser": True
+            }
+        
+        except Exception as e:
+            logging.error(f"Failed to export BI dashboard: {e}")
+            return {
+                "enabled": False,
+                "error": str(e)
+            }

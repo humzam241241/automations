@@ -1,131 +1,202 @@
-# Email to Spreadsheet Framework
+# 📧 Email Automation Pro v2.0
 
-A modular framework that transforms emails into structured spreadsheet data. Supports **offline** (manual wizard), **online** (Azure Function webhook), and **no-Graph** (local file) modes.
+Transform emails into Excel spreadsheets and interactive BI dashboards automatically - with or without Microsoft Graph access!
 
-## Features
+## ✨ What's New in v2.0
 
-- ✅ **OFFLINE MODE**: Interactive wizard with Graph detection and local file fallback
-- ✅ **ONLINE MODE**: Azure Function HTTP trigger for one-click profile execution
-- ✅ **NO-GRAPH MODE**: Process local `.eml`, `.msg`, or CSV files without Microsoft Graph
-- ✅ **Profile-based**: Reusable JSON configurations for different workflows
-- ✅ **Keyword/Regex Rules**: Automatically map content to spreadsheet columns
-- ✅ **Multi-output**: Excel (with template support), CSV
-- ✅ **OneDrive Integration**: Auto-upload results (when Graph available)
+### 🎯 Smart Input/Output Defaults
+- **Email input (.eml, Graph)** → Automatically creates Excel spreadsheet
+- **Excel/CSV input** → Automatically creates BI dashboard
+- **Pipeline mode** → Email → Excel → BI Dashboard (all-in-one!)
 
----
+### 📊 Interactive BI Dashboards
+- Beautiful HTML dashboards with Chart.js
+- Auto-generates charts based on your data:
+  - Pie charts for categories
+  - Bar charts for distributions
+  - Line charts for trends
+  - Timeline charts for dates
+- Opens automatically in your browser
+- No Excel required to view!
 
-## Quick Start
+### 🔍 Smart Keyword Matching
+Search for **"date"** and find:
+- The word "date" anywhere
+- 2024-01-15, January 15, 2024
+- All date formats automatically!
 
-### 1. Install Dependencies
+Search for **"amount"** and find:
+- The word "amount"
+- $100, €50, £25
+- 1,234.56
+- All currency and number formats!
+
+### 💻 Modern Web-Style UI
+- Apple-inspired clean design
+- Gradient backgrounds
+- Card-based layout
+- Real-time activity log
+- Profile management
+- Delete profiles with one click
+
+### 📁 Multiple Input Sources
+1. **Microsoft Graph** - Direct from Outlook (requires permissions)
+2. **Local .eml files** - Export emails from any client
+3. **Excel files (.xlsx)** - Process existing spreadsheets
+4. **CSV files** - Standard CSV format
+
+### 🎨 Auto-Column Detection
+- Upload Excel/CSV file
+- Columns detected automatically
+- No manual typing needed!
+
+## 🚀 Quick Start
+
+### Option 1: Use the GUI (Recommended)
+
+```bash
+python run_gui_v2.py
+```
+
+Or just double-click **`run_gui.bat`**
+
+### Option 2: Use the Wizard (CLI)
+
+```bash
+python run_wizard.py
+```
+
+## 📋 Installation
+
+1. **Install Python 3.8+**
+2. **Install dependencies:**
 
 ```bash
 pip install -r requirements.txt
 ```
 
-### 2. Run Offline Wizard
+3. **Configure Graph API (optional):**
 
-```bash
-python run_wizard.py
+Copy `config/app_settings.example.json` to `config/app_settings.json` and fill in your Azure app details:
+
+```json
+{
+  "client_id": "your-app-client-id",
+  "tenant_id": "your-tenant-id",
+  "client_secret": "your-secret-if-using-azure-function"
+}
 ```
 
-The wizard will:
-- Detect if you have Microsoft Graph access
-- Offer local file fallback if Graph is unavailable
-- Guide you through profile creation or execution
+**Don't have Graph access?** No problem! Use local .eml files or Excel/CSV files instead.
 
-### 3. (Optional) Test Graph Permissions
+## 🎯 Usage Examples
+
+### Example 1: Process Emails → Create Excel
+
+**Input:** 25 emails from Outlook folder
+**Output:** Excel spreadsheet with columns for Subject, From, Date, Keywords
+
+1. Open GUI
+2. Click "New Profile"
+3. Select **"Microsoft Graph"** as input
+4. Enter columns: `Subject,From,Date,Priority`
+5. Choose **"Excel File"** as output
+6. Run profile
+
+Result: `output/emails_20240115.xlsx`
+
+### Example 2: Excel File → BI Dashboard
+
+**Input:** Existing Excel file with email data
+**Output:** Interactive HTML dashboard with charts
+
+1. Open GUI
+2. Click "New Profile"
+3. Select **"Excel File (.xlsx)"** as input
+4. Browse to your file
+5. Check **"Auto-detect columns"**
+6. Output automatically sets to **"BI Dashboard"**
+7. Run profile
+
+Result: Dashboard opens in browser automatically! 🎉
+
+### Example 3: End-to-End Pipeline
+
+**Input:** Emails from Inbox
+**Output:** Excel + BI Dashboard
+
+1. Open GUI
+2. Click "New Profile"
+3. Select **"Microsoft Graph"** as input
+4. Enter columns or load from template
+5. Choose **"Excel + BI Dashboard"** as output
+6. Run profile
+
+Result:
+- `output/emails_20240115.xlsx` (Excel file)
+- `output/dashboards/dashboard_20240115.html` (Interactive dashboard)
+
+## 🔐 Microsoft Graph Permissions
+
+### Required Permissions
+
+| Permission | Type | Purpose |
+|------------|------|---------|
+| `User.Read` | Delegated | Identity check |
+| `Mail.Read` | Delegated/Application | Read emails |
+| `Files.ReadWrite` | Delegated/Application | Upload to OneDrive |
+
+### Check Your Permissions
 
 ```bash
 python permissions_diagnostic.py
 ```
 
-This script checks which Graph permissions you have and provides remediation steps.
+This will test:
+- ✅ Can access /me
+- ✅ Can read mail
+- ✅ Can access OneDrive
 
----
+And tell you exactly which permissions to request from IT!
 
-## Usage Modes
+## 📁 Working Without Graph (Local Mode)
 
-### Mode 1: Offline with Microsoft Graph
+### Export Emails from Outlook
 
-**Requirements**:
-- Azure AD app registration with delegated permissions
-- User account with mailbox access
+1. **Select emails** in Outlook
+2. **Drag and drop** to a folder
+3. **Files saved as .eml**
+4. Point the tool to that folder!
 
-**Permissions needed**:
-- `Mail.Read` (read emails)
-- `Files.ReadWrite` (upload to OneDrive)
-
-**How to run**:
-```bash
-python run_wizard.py
+```python
+{
+  "name": "Process Local Emails",
+  "input_source": "local_eml",
+  "email_selection": {
+    "directory": "./input_emails",
+    "pattern": "*.eml"
+  },
+  ...
+}
 ```
 
-Select "Microsoft Graph" as input source. The wizard will:
-1. Authenticate via device code flow
-2. Fetch emails from your Outlook folder
-3. Apply keyword rules
-4. Generate Excel/CSV
-5. Upload to OneDrive or save locally
+### Export from Gmail
 
----
+1. Open email
+2. Click **⋮** (More)
+3. Choose **Download message**
+4. Saves as .eml file!
 
-### Mode 2: Offline without Graph (Local Files)
+## 🎨 Profile Configuration
 
-**Requirements**: None (no Azure/Graph needed)
+Profiles are JSON files stored in `profiles/` directory.
 
-**How to run**:
-1. Export emails to `.eml` files (from Outlook, Gmail, etc.)
-2. Place them in `./input_emails/`
-3. Run wizard:
-   ```bash
-   python run_wizard.py
-   ```
-4. Select "Local .eml files" as input source
-
-**Supported formats**:
-- `.eml` (standard email format)
-- `.csv` (with columns: subject, from, to, date, body)
-
----
-
-### Mode 3: Online (Azure Function)
-
-**Requirements**:
-- Azure Function App
-- Azure AD app registration with **application permissions** (client credentials)
-
-**Permissions needed**:
-- `Mail.Read` (application permission)
-- `Files.ReadWrite` (application permission)
-
-**Deployment**:
-1. Deploy the `function_app/` directory to Azure
-2. Set environment variables in Azure Function App settings:
-   - `TENANT_ID`
-   - `CLIENT_ID`
-   - `CLIENT_SECRET`
-   - `MAILBOX_USER` (target mailbox)
-3. Create profiles in `profiles/` directory and deploy them
-
-**Usage**:
-```bash
-# Run a profile via HTTP POST
-curl -X POST "https://YOUR_FUNCTION_APP.azurewebsites.net/api/run?profile=example_graph"
-```
-
----
-
-## Configuration
-
-### Profile Schema
-
-Profiles are JSON files in `profiles/` that define:
+### Minimal Profile Example
 
 ```json
 {
-  "name": "my_profile",
-  "description": "Process billing emails",
-  "input_source": "graph | local_eml | local_csv",
+  "name": "Simple Email Export",
+  "input_source": "graph",
   "email_selection": {
     "folder_name": "Inbox",
     "newest_n": 25
@@ -134,216 +205,269 @@ Profiles are JSON files in `profiles/` that define:
     "columns": [
       {"name": "Subject", "type": "text"},
       {"name": "From", "type": "text"},
-      {"name": "Billing", "type": "text"}
+      {"name": "Date", "type": "date"}
     ]
   },
-  "rules": [
-    {
-      "column": "Billing",
-      "keywords": ["invoice", "billing", "payment"],
-      "value": "Yes",
-      "unmatched_value": ""
-    }
-  ],
   "output": {
     "format": "excel",
-    "destination": "onedrive",
-    "onedrive_path": "/EmailReports",
-    "filename_template": "report_{timestamp}.xlsx"
+    "destination": "local",
+    "local_path": "./output"
   }
 }
 ```
 
-### Example Profiles
+### Advanced Profile with Rules
 
-- **`profiles/example_graph.json`**: Uses Microsoft Graph to fetch emails
-- **`profiles/example_local.json`**: Uses local .eml files (no Graph)
-
----
-
-## Setup: Microsoft Graph Permissions
-
-### For Local/Offline Use (Delegated Permissions)
-
-1. Go to **Azure Portal** → **App Registrations** → Your App
-2. Navigate to **API permissions**
-3. Add these **Delegated** permissions:
-   - `Microsoft Graph` → `Mail.Read`
-   - `Microsoft Graph` → `Files.ReadWrite`
-   - `Microsoft Graph` → `User.Read`
-4. If your org requires it, click **Grant admin consent**
-
-### For Azure Function/Online Use (Application Permissions)
-
-1. Go to **Azure Portal** → **App Registrations** → Your App
-2. Navigate to **API permissions**
-3. Add these **Application** permissions:
-   - `Microsoft Graph` → `Mail.Read`
-   - `Microsoft Graph` → `Files.ReadWrite`
-4. **Grant admin consent** (required for application permissions)
-5. Create a **client secret** under **Certificates & secrets**
-
-### Environment Variables (Production)
-
-Set these in your Azure Function App or local `.env`:
-
-```bash
-TENANT_ID=your-tenant-id
-CLIENT_ID=your-client-id
-CLIENT_SECRET=your-client-secret
-MAILBOX_USER=user@company.com
-TARGET_FOLDER_ID=folder-id-if-needed
-ONEDRIVE_PATH=/EmailReports
+```json
+{
+  "name": "Priority Email Tracking",
+  "input_source": "graph",
+  "email_selection": {
+    "folder_name": "Inbox",
+    "search_query": "hasAttachments:true"
+  },
+  "schema": {
+    "columns": [
+      {"name": "Subject", "type": "text"},
+      {"name": "From", "type": "text"},
+      {"name": "Date", "type": "date"},
+      {"name": "Priority", "type": "text"},
+      {"name": "Has_Invoice", "type": "text"}
+    ]
+  },
+  "rules": [
+    {
+      "column": "Priority",
+      "match_type": "keyword",
+      "keywords": ["urgent", "important", "asap"],
+      "search_in": ["subject", "body"],
+      "value_if_matched": "High",
+      "priority": 10
+    },
+    {
+      "column": "Has_Invoice",
+      "match_type": "datatype",
+      "datatype": "number",
+      "search_in": ["attachments_text"],
+      "value_if_matched": "Yes"
+    }
+  ],
+  "output": {
+    "format": "excel",
+    "destination": "both",
+    "local_path": "./output",
+    "also_export_bi": true
+  }
+}
 ```
 
-**IMPORTANT**: Never commit secrets to GitHub. Use environment variables in production.
+## 🔧 Advanced Features
 
----
+### Pipeline Chaining
 
-## Architecture
+Process data through multiple steps:
 
-```
-┌─────────────────────────────────────────────────────────────┐
-│                      EXECUTION MODES                         │
-├─────────────────────────────────────────────────────────────┤
-│  OFFLINE (run_wizard.py)  │  ONLINE (Azure Function)        │
-│  - Interactive wizard     │  - HTTP trigger /api/run        │
-│  - Graph or local files   │  - Client credentials auth      │
-└─────────────────────────────────────────────────────────────┘
-                              ▼
-┌─────────────────────────────────────────────────────────────┐
-│                    CORE ENGINE (core/)                       │
-│  - ExecutionEngine: Orchestrates job execution              │
-│  - ProfileLoader: Loads/validates JSON profiles             │
-└─────────────────────────────────────────────────────────────┘
-                              ▼
-┌─────────────────────────────────────────────────────────────┐
-│                    ADAPTERS (adapters/)                      │
-│  Input:  GraphEmailAdapter | LocalEmailAdapter             │
-│  Output: ExcelWriter | CSVWriter | OneDriveAdapter          │
-└─────────────────────────────────────────────────────────────┘
-                              ▼
-┌─────────────────────────────────────────────────────────────┐
-│                      JOBS (jobs/)                            │
-│  - email_to_table: Extract emails → tabular data            │
-│  - excel_to_biready: Transform data for BI                  │
-│  - append_to_master: Merge into master dataset              │
-└─────────────────────────────────────────────────────────────┘
+```json
+{
+  "pipeline": [
+    "email_to_table",
+    "excel_to_biready",
+    "append_to_master"
+  ]
+}
 ```
 
----
+### Master Dataset
 
-## Troubleshooting
+Append new data to existing dataset with deduplication:
 
-### "Graph authentication failed"
+```json
+{
+  "master_dataset": {
+    "path": "./master/all_emails.xlsx",
+    "deduplicate_column": "Subject"
+  }
+}
+```
 
-**Solution**:
-1. Run `python permissions_diagnostic.py` to check permissions
-2. Ensure you have the required Graph permissions in Azure AD
-3. If using client credentials, ensure `CLIENT_SECRET` is correct
+### BI Transformations
 
-### "No emails found"
+Clean and transform data:
 
-**Solutions**:
-- Check folder name spelling (case-sensitive in some cases)
-- Verify folder exists in your mailbox
-- Ensure you have emails in that folder
-- Try using search query instead
+```json
+{
+  "bi_transformations": [
+    {"type": "trim_whitespace"},
+    {"type": "remove_empty_rows"},
+    {"type": "cast_dates", "columns": ["Date"]}
+  ]
+}
+```
 
-### "Profile validation errors"
+### Smart Keyword Rules
 
-**Solutions**:
-- Check JSON syntax (use a validator)
-- Ensure `input_source` is one of: `graph`, `local_eml`, `local_csv`
-- Verify all required fields are present
+#### Exact Word Match (Default)
 
-### Local .eml files not loading
+```json
+{
+  "match_type": "keyword",
+  "keywords": ["invoice"],
+  "word_boundary": true
+}
+```
 
-**Solutions**:
-- Ensure files are valid `.eml` format
-- Check directory path is correct
-- Verify files are readable (permissions)
+Finds: "invoice", "Invoice", "INVOICE"
+Skips: "invoices", "invoice123"
 
----
+#### Substring Match
 
-## File Structure
+```json
+{
+  "match_type": "keyword",
+  "keywords": ["invoice"],
+  "substring": true
+}
+```
+
+Finds: "invoice", "invoices", "invoice123", "pro-invoice"
+
+#### Datatype Match
+
+```json
+{
+  "match_type": "datatype",
+  "datatype": "date"
+}
+```
+
+Automatically finds:
+- 2024-01-15
+- Jan 15, 2024
+- 15/01/2024
+- All date formats!
+
+Available datatypes:
+- `date` - Any date format
+- `number` - Numbers and currencies
+- `email` - Email addresses
+- `url` - Web URLs
+- `phone` - Phone numbers
+
+#### Search Scopes
+
+```json
+{
+  "search_in": ["subject", "body"]
+}
+```
+
+Options:
+- `subject` - Email subject only
+- `body` - Email body only
+- `from` - Sender address
+- `to` - Recipient addresses
+- `attachments_text` - Text extracted from attachments
+- `attachments_names` - Attachment filenames
+- `all` - Search everywhere (default)
+
+## 📊 BI Dashboard Features
+
+Auto-generated dashboards include:
+
+### 📈 Charts
+- **Doughnut charts** for categorical data (Priority, Status, etc.)
+- **Bar charts** for top senders/recipients
+- **Line charts** for trends over time
+- **Timeline charts** for date-based data
+
+### 📋 Data Table
+- First 100 rows displayed
+- Sortable columns
+- Badge highlighting for Yes/No values
+- Responsive design
+
+### 📱 Responsive
+- Works on desktop, tablet, and mobile
+- Modern web design
+- Gradient backgrounds
+- Card-based layout
+
+## 🏗️ Architecture
 
 ```
-.
-├── adapters/               # Data source/output adapters
-│   ├── graph_email.py      # Microsoft Graph email fetcher
-│   ├── local_email.py      # Local .eml/.csv loader (no Graph)
+EMAILtoEXCELLprogram/
+├── core/
+│   ├── engine.py           # Main execution engine
+│   └── profile_loader.py   # Profile management
+├── adapters/
+│   ├── graph_email.py      # Microsoft Graph
+│   ├── local_email.py      # .eml file parsing
+│   ├── excel_csv_email.py  # Excel/CSV input
 │   ├── excel_writer.py     # Excel output
 │   ├── csv_writer.py       # CSV output
-│   └── onedrive_storage.py # OneDrive upload/download
-├── core/                   # Core engine
-│   ├── engine.py           # Main execution engine
-│   └── profile_loader.py   # Profile JSON loader
-├── jobs/                   # Job modules
-│   ├── email_to_table.py   # Email → table transformation
+│   └── onedrive_storage.py # OneDrive upload
+├── jobs/
+│   ├── email_to_table.py   # Rule engine
+│   ├── smart_keyword_matcher.py  # Advanced matching
 │   ├── excel_to_biready.py # BI transformations
-│   └── append_to_master.py # Append to master dataset
+│   └── append_to_master.py # Dataset merging
 ├── profiles/               # Profile configurations
-│   ├── example_graph.json  # Example with Graph
-│   └── example_local.json  # Example without Graph
-├── function_app/           # Azure Function (online mode)
-│   ├── Notifications/      # Webhook for Graph subscriptions
-│   ├── RunProfile/         # HTTP trigger to run profiles
-│   └── shared/             # Shared modules
-├── config/                 # Configuration files
-│   ├── app_settings.example.json  # Template (safe to commit)
-│   └── keyword_map.json    # Legacy keyword config
-├── run_wizard.py           # Offline wizard entry point
-├── permissions_diagnostic.py  # Test Graph permissions
-├── main.py                 # Legacy local script
-└── README.md               # This file
+├── output/                 # Output files
+│   └── dashboards/         # HTML dashboards
+└── run_gui_v2.py           # Modern GUI
 ```
 
+## 🤝 Contributing
+
+This is a Sanofi internal project. For questions or improvements, contact the automation team.
+
+## 📝 License
+
+Internal use only - Sanofi Confidential
+
+## 🆘 Troubleshooting
+
+### "Microsoft Graph permission denied"
+
+**Solution:** Use local .eml files or CSV/Excel input instead:
+1. Export emails from Outlook (drag to folder)
+2. Use "Local .eml Files" as input source
+3. No permissions needed!
+
+### "Font error in GUI"
+
+**Fixed in v2.0!** Auto-detects your OS and uses appropriate font:
+- Windows: Segoe UI
+- macOS: SF Pro
+- Linux: Ubuntu
+
+### "Can't see my columns in Excel input"
+
+**Solution:** Check "Auto-detect columns" when selecting the file!
+
+### "BI Dashboard shows no charts"
+
+**Reason:** Data might not have categorical or numeric columns suitable for charts.
+
+**Solution:** Dashboard still shows the data table - perfect for reviewing data!
+
+### "Profile won't save"
+
+**Check:**
+1. Profile name is filled
+2. At least one column is specified (or auto-detect is enabled)
+3. Input source is selected
+
+## 🎓 Training Videos
+
+_(Coming soon: Internal Sanofi training portal)_
+
+## 📞 Support
+
+- **Internal Wiki:** [Link to Sanofi automation docs]
+- **Teams Channel:** #email-automation
+- **Email:** automation-team@sanofi.com
+
 ---
 
-## Migration from Old Version
-
-If you were using `main.py` with `config.json`:
-
-1. **Create a profile**:
-   ```bash
-   python run_wizard.py
-   ```
-   Choose option 2 (Create new profile) and answer prompts.
-
-2. **Or manually convert** `config.json` to a profile:
-   - `keywords` → `rules` with keyword matching
-   - `outlook_folder` → `email_selection.folder_name`
-   - `onedrive_folder` → `output.onedrive_path`
-
-3. **Run the new wizard** instead of `main.py`
-
----
-
-## Contributing
-
-1. Add new adapters in `adapters/`
-2. Add new jobs in `jobs/`
-3. Create example profiles in `profiles/`
-4. Update this README
-
----
-
-## License
-
-MIT License - See LICENSE file for details
-
----
-
-## Support
-
-**Common Issues**:
-- Run `python permissions_diagnostic.py` for permission issues
-- Check Azure AD app registration for correct permissions
-- Verify environment variables are set correctly
-- Use local file mode if Graph is unavailable
-
-**Need Help?**
-- Check the troubleshooting section above
-- Review example profiles in `profiles/`
-- Test with the diagnostic script
+Made with ❤️ by the Sanofi Automation Team

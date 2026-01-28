@@ -1,0 +1,62 @@
+{
+  "name": "Humza",
+  "description": "",
+  "input_source": "graph",
+  "email_selection": {
+    "folder_name": "Inbox",
+    "newest_n": 25,
+    "search_query": null
+  },
+  "schema": {
+    "columns": [
+      {
+        "name": "Subject",
+        "type": "text"
+      },
+      {
+        "name": "From",
+        "type": "text"
+      },
+      {
+        "name": "Date",
+        "type": "text"
+      }
+    ]
+  },
+  "rules": [
+    {
+      "column": "Billing",
+      "keywords": [
+        "invoice",
+        "billing",
+        "payment"
+      ],
+      "value": "Yes",
+      "word_boundary": true,
+      "search_in": [
+        "subject",
+        "body"
+      ],
+      "priority": 10
+    },
+    {
+      "column": "IT",
+      "keywords": [
+        "laptop",
+        "vpn",
+        "password"
+      ],
+      "value": "Yes",
+      "word_boundary": true,
+      "search_in": [
+        "all"
+      ]
+    }
+  ],
+  "output": {
+    "format": "excel",
+    "destination": "local",
+    "local_path": "./output",
+    "filename_template": "Humza_{timestamp}.xlsx"
+  }
+}

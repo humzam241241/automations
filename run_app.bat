@@ -1,7 +1,7 @@
 @echo off
 setlocal EnableExtensions EnableDelayedExpansion
 cd /d "%~dp0"
-title Email to Spreadsheet Wizard
+title Email to Spreadsheet Framework
 color 0A
 
 cls
@@ -9,59 +9,50 @@ echo ==============================================
 echo     EMAIL TO SPREADSHEET FRAMEWORK
 echo ==============================================
 echo.
-echo This wizard will help you:
-echo  - Create reusable email processing profiles
-echo  - Fetch emails from Outlook OR local files
-echo  - Apply keyword/regex rules to extract data
-echo  - Output to Excel/CSV (local or OneDrive)
+echo Select interface:
+echo   1) GUI (Graphical Interface) - Recommended
+echo   2) Command-line Wizard
+echo   3) Exit
+echo.
+set /p choice="Your choice [1-3]: "
+
+if "%choice%"=="1" goto gui_mode
+if "%choice%"=="2" goto wizard_mode
+if "%choice%"=="3" goto end
+
+:gui_mode
 echo.
 echo ----------------------------------------------
-echo 1) Installing dependencies
+echo Launching GUI Interface...
 echo ----------------------------------------------
-python -m pip install -r requirements.txt >nul 2>&1
+python run_gui.py
 if errorlevel 1 (
   echo.
-  echo ERROR: Dependency installation failed.
-  echo Please check your Python installation or network access.
-  pause
-  exit /b 1
+  echo ERROR: GUI failed to launch.
+  echo.
+  echo Possible causes:
+  echo   - Python not installed correctly
+  echo   - tkinter not available
+  echo.
+  echo Falling back to command-line wizard...
+  timeout /t 3 >nul
+  goto wizard_mode
 )
-echo ✓ Dependencies installed
+goto end
 
+:wizard_mode
 echo.
 echo ----------------------------------------------
-echo 2) Checking Graph API configuration
+echo Launching Command-line Wizard...
 echo ----------------------------------------------
-if not defined CLIENT_ID (
-  echo.
-  echo ⚠ CLIENT_ID environment variable not set
-  echo   Graph mode will be unavailable.
-  echo   You can still use local .eml files as input.
-  echo.
-) else (
-  echo ✓ CLIENT_ID configured
-)
-
-if not defined AUTHORITY (
-  echo.
-  echo ⚠ AUTHORITY environment variable not set
-  echo   Graph mode will be unavailable.
-  echo.
-) else (
-  echo ✓ AUTHORITY configured
-)
-
-echo.
-echo ----------------------------------------------
-echo 3) Launching Interactive Wizard
-echo ----------------------------------------------
-echo.
 python run_wizard.py
 if errorlevel 1 (
   echo.
   echo ERROR: Wizard exited with an error.
 )
+goto end
 
+:end
 echo.
 echo ----------------------------------------------
 echo Done. Press any key to close.
