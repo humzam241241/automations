@@ -585,12 +585,11 @@ function renderColumnSuggestions(suggestions) {
         return;
     }
 
-    container.innerHTML = suggestions.map(suggestion => {
+    container.innerHTML = suggestions.map((suggestion, index) => {
         const nameEscaped = escapeHtml(suggestion.name);
         const example = escapeHtml(suggestion.example || 'Example not available');
         const confidence = suggestion.confidence || 4;
         const synonyms = (suggestion.synonyms || []).map(s => `<span>${escapeHtml(s)}</span>`).join('');
-        const buttonParams = JSON.stringify(suggestion.name);
 
         return `
             <div class="suggestion-item">
@@ -604,12 +603,63 @@ function renderColumnSuggestions(suggestions) {
                         ${synonyms}
                     </div>
                 </div>
-                <button class="btn-add-column" onclick="addSuggestedColumn(${buttonParams}, 'mixed')">
+                <button class="btn-add-column" data-suggestion-index="${index}">
                     + Add Column
                 </button>
             </div>
         `;
     }).join('');
+    
+    // Attach event listeners to buttons
+    container.querySelectorAll('.btn-add-column').forEach(button => {
+        button.addEventListener('click', function() {
+            const index = parseInt(this.dataset.suggestionIndex);
+            const suggestion = suggestions[index];
+            if (suggestion) {
+                addSuggestedColumn(suggestion.name, 'mixed');
+            }
+        });
+    });
+}
+
+async function autoScanForColumns() {
+    const inputSource = document.getElementById('inputSource').value;
+    const emailSelection = collectEmailSelection(inputSource);
+    
+    if (!emailSelection || Object.keys(emailSelection).length === 0) {
+        return; // No files/folder selected yet
+    }
+    
+    // For Excel/CSV, also try to detect columns from structure
+    if (inputSource === 'excel_file' || inputSource === 'csv_file') {
+        // detectColumns handles Excel/CSV column detection
+        // But we can also scan content for additional suggestions
+    }
+    
+    // Auto-scan for column suggestions from content
+    try {
+        log('🔍 Auto-scanning files for column suggestions...', 'info');
+        const response = await fetch('/api/suggest-columns', {
+            method: 'POST',
+            headers: {'Content-Type': 'application/json'},
+            body: JSON.stringify({
+                profile: {
+                    name: 'suggestion',
+                    input_source: inputSource,
+                    email_selection: emailSelection
+                }
+            })
+        });
+
+        const data = await response.json();
+        if (data.success && data.suggestions && data.suggestions.length > 0) {
+            renderColumnSuggestions(data.suggestions);
+            log(`✓ Auto-scanned: Found ${data.suggestions.length} column suggestions`, 'success');
+        }
+    } catch (error) {
+        console.error('Auto-scan failed:', error);
+        // Don't show error to user - this is background scanning
+    }
 }
 
 async function suggestColumnsFromEmails() {
@@ -621,6 +671,7 @@ async function suggestColumnsFromEmails() {
     }
 
     try {
+        log('🔍 Scanning emails for column suggestions...', 'info');
         const response = await fetch('/api/suggest-columns', {
             method: 'POST',
             headers: {'Content-Type': 'application/json'},
@@ -637,7 +688,7 @@ async function suggestColumnsFromEmails() {
         if (data.success) {
             renderColumnSuggestions(data.suggestions);
             if (data.suggestions && data.suggestions.length > 0) {
-                log(`AI suggested ${data.suggestions.length} columns`, 'info');
+                log(`✓ Found ${data.suggestions.length} column suggestions`, 'success');
             } else {
                 log('No suggestions returned from sample emails', 'info');
             }
@@ -1052,6 +1103,9 @@ async function browseDirectory(targetInputId) {
         if (data.success && data.path) {
             input.value = data.path;
             log(`✓ Selected folder: ${data.path}`, 'success');
+            
+            // Auto-scan for column suggestions when folder is selected
+            await autoScanForColumns();
         } else if (data.message !== 'No file selected') {
             log(`⚠ ${data.message}`, 'warning');
         }
@@ -1140,7 +1194,10 @@ async function browseFile(targetInputId, fileType, allowMultiple = true) {
             }
             log(`✓ Selected: ${data.path}`, 'success');
             
-            // Auto-detect columns if checkbox is checked
+            // Auto-scan for column suggestions when files are selected
+            await autoScanForColumns();
+            
+            // Auto-detect columns if checkbox is checked (for Excel/CSV)
             const autoDetect = document.getElementById('autoDetect');
             if (autoDetect && autoDetect.checked) {
                 await detectColumns();
