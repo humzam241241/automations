@@ -8,9 +8,11 @@ from typing import Dict, List, Tuple, Optional
 try:
     from .synonym_resolver import get_synonyms, columns_match, get_resolver
     from .pattern_learner import PatternLearner
+    from .precise_extractor import extract_precise_value, extract_order_type, extract_work_order, extract_equipment
 except ImportError:
     from jobs.synonym_resolver import get_synonyms, columns_match, get_resolver
     from jobs.pattern_learner import PatternLearner
+    from jobs.precise_extractor import extract_precise_value, extract_order_type, extract_work_order, extract_equipment
 
 # Global pattern learner instance
 _pattern_learner = None
@@ -21,6 +23,53 @@ def get_pattern_learner() -> PatternLearner:
     if _pattern_learner is None:
         _pattern_learner = PatternLearner()
     return _pattern_learner
+
+
+# Validation helpers -------------------------------------------------
+def _is_gibberish(value: str) -> bool:
+    """
+    Check if a value looks like gibberish (email signatures, random text, etc.)
+    """
+    if not value or len(value) < 1:
+        return True
+    
+    # Too long (likely grabbed entire paragraph)
+    if len(value) > 200:
+        return True
+    
+    # Common email signature patterns
+    email_signature_patterns = [
+        r'^Sent from.*',
+        r'^This email.*',
+        r'^Confidentiality.*',
+        r'^Please consider.*',
+        r'^Best regards.*',
+        r'^Regards,.*',
+        r'^Thank you.*',
+        r'^Thanks,.*',
+    ]
+    for pattern in email_signature_patterns:
+        if re.match(pattern, value, re.IGNORECASE):
+            return True
+    
+    # URLs (usually not valid data)
+    if re.search(r'https?://|www\.', value):
+        return True
+    
+    # Email addresses in non-email fields
+    if re.search(r'@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}', value):
+        return True
+    
+    # Too many words (likely grabbed sentence)
+    words = value.split()
+    if len(words) > 10:
+        return True
+    
+    # Mostly punctuation
+    if len(re.sub(r'[A-Za-z0-9\s]', '', value)) > len(value) * 0.5:
+        return True
+    
+    return False
 
 
 # Confidence helpers -------------------------------------------------
@@ -266,15 +315,31 @@ def extract_email_fields(email_data: Dict) -> Dict[str, str]:
 
 def _extract_number_only(column_name: str, content: str) -> str:
     """
-    Extract numbers/IDs - handles various formats:
-    - "MI #12345" → MI-12345
-    - "4000390042 ZM03" → 4000390042 ZM03 (number + code)
-    - "TORFER0048" → TORFER0048 (letters + numbers mixed)
-    - "B89" → B89 (short code)
+    Extract numbers/IDs - handles various formats with PRECISE rules:
+    - Order Type: ZM03, ZM05 (always ZM# format)
+    - Work Order: 4000390042 (always 4000# format)
+    - Equipment: 300020888 (always 3000# format)
+    - Other: MI #12345, TORFER0048, B89
     
-    NEVER returns "Yes".
+    NEVER returns "Yes" or gibberish.
     """
     column_lower = column_name.lower().strip()
+    
+    # PRIORITY: Use precise extractor for known patterns
+    if any(kw in column_lower for kw in ["order type", "type", "order type code"]):
+        precise = extract_order_type(content)
+        if precise:
+            return precise
+    
+    if any(kw in column_lower for kw in ["order", "work order", "wo", "wo number", "order number"]):
+        precise = extract_work_order(content)
+        if precise:
+            return precise
+    
+    if any(kw in column_lower for kw in ["equipment", "equip", "eq", "equipment id", "equipment number"]):
+        precise = extract_equipment(content)
+        if precise:
+            return precise
     
     # Get the prefix (part before number/id/#/etc.)
     prefix = column_name
@@ -294,7 +359,8 @@ def _extract_number_only(column_name: str, content: str) -> str:
             value = match.group(1).strip()
             # Clean up - remove trailing punctuation but keep alphanumeric + spaces
             value = re.sub(r'[,;:\s]+$', '', value)
-            if value and len(value) < 50:
+            # Validate: reject gibberish
+            if value and len(value) < 50 and not _is_gibberish(value):
                 return value
     
     # STRATEGY 2: If we have a prefix, search for PREFIX + NUMBER
@@ -391,7 +457,33 @@ def smart_search_column(email_data: Dict, column_name: str, extract_type: str = 
     column_lower = column_name.lower().strip()
     column_synonyms = get_synonyms(column_name) if use_synonyms else [column_name]
 
-    # Type-specific extractors
+    # PRIORITY 0: Use precise extractor for known patterns (MOST ACCURATE)
+    column_lower = column_name.lower().strip()
+    
+    # Check for order type (ZM#)
+    if any(kw in column_lower for kw in ["order type", "type", "order type code"]):
+        precise_value = extract_order_type(all_content)
+        if precise_value:
+            return precise_value, make_meta("precise_order_type", 10)
+    
+    # Check for work order (4000#)
+    if any(kw in column_lower for kw in ["order", "work order", "wo", "wo number", "order number"]):
+        precise_value = extract_work_order(all_content)
+        if precise_value:
+            return precise_value, make_meta("precise_work_order", 10)
+    
+    # Check for equipment (3000#)
+    if any(kw in column_lower for kw in ["equipment", "equip", "eq", "equipment id", "equipment number"]):
+        precise_value = extract_equipment(all_content)
+        if precise_value:
+            return precise_value, make_meta("precise_equipment", 10)
+    
+    # Try generic precise extractor
+    precise_value = extract_precise_value(column_name, all_content)
+    if precise_value:
+        return precise_value, make_meta("precise_pattern", 9)
+    
+    # Type-specific extractors (fallback)
     if extract_type == "number":
         for name in [column_name] + column_synonyms:
             result = _extract_number_only(name, all_content)
@@ -738,19 +830,18 @@ def expand_order_numbers_to_rows(
             if order_val and len(order_val) >= 4 and order_val not in order_numbers:
                 order_numbers.append(order_val)
     
-    # Strategy 2: Look for standalone order number patterns (if no table matches)
+    # Strategy 2: Use precise extractor for work orders (4000#)
     if not order_numbers:
-        patterns = [
-            r'\b(\d{6,})\b',  # 4000390042
-            r'\b(\d{6,}\s+[A-Z]{2,}\d*)\b',  # 4000390042 ZM03
-        ]
-        for pattern in patterns:
-            matches = re.findall(pattern, all_content)
-            if matches:
-                for m in matches:
-                    order_val = m.strip() if isinstance(m, str) else str(m).strip()
-                    if len(order_val) >= 6 and order_val not in order_numbers:
-                        order_numbers.append(order_val)
+        wo = extract_work_order(all_content)
+        if wo:
+            order_numbers.append(wo)
+        
+        # Also search for multiple work orders
+        wo_pattern = r'\b(4\d{9,})\b'
+        wo_matches = re.findall(wo_pattern, all_content)
+        for wo_match in wo_matches:
+            if wo_match not in order_numbers:
+                order_numbers.append(wo_match)
     
     # Remove duplicates but preserve order
     order_numbers = list(dict.fromkeys(order_numbers))
@@ -906,17 +997,23 @@ def email_to_record(
             smart_conf = smart_meta.get("confidence", 0)
             smart_source = smart_meta.get("source", "smart_search")
             smart_matched = bool(smart_value)
+            
+            # Validate: reject gibberish
+            if smart_value and _is_gibberish(smart_value):
+                smart_value = ""
+                smart_matched = False
 
             # Optional AI assist if low confidence
             if use_ai and ai_threshold and smart_conf < ai_threshold:
                 ai_value, ai_meta = _ai_assist(email_data, col_name, col_type)
-                if ai_value:
+                if ai_value and not _is_gibberish(ai_value):
                     smart_value = ai_value
                     smart_conf = ai_meta.get("confidence", smart_conf)
                     smart_source = ai_meta.get("source", "ai_assist")
                     smart_matched = True
 
-            record[col_name] = smart_value
+            if smart_value:
+                record[col_name] = smart_value
             
             if explain:
                 explanations[col_name] = {
