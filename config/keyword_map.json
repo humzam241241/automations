@@ -1,0 +1,24 @@
+{
+  "columns": [
+    {
+      "header": "Billing",
+      "keywords": ["invoice", "billing", "payment"],
+      "value": "Yes",
+      "unmatched_value": ""
+    },
+    {
+      "header": "IT",
+      "keywords": ["laptop", "vpn", "account", "password"],
+      "value": "Yes",
+      "unmatched_value": ""
+    },
+    {
+      "header": "HR",
+      "keywords": ["benefits", "onboarding", "policy"],
+      "value": "Yes",
+      "unmatched_value": ""
+    }
+  ],
+  "attachment_column": "Attachments",
+  "notes_column": "Notes"
+}

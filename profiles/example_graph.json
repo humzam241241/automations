@@ -1,0 +1,46 @@
+{
+  "name": "example_graph",
+  "description": "Example profile using Microsoft Graph",
+  "input_source": "graph",
+  "email_selection": {
+    "folder_name": "Inbox",
+    "newest_n": 25,
+    "search_query": null
+  },
+  "schema": {
+    "columns": [
+      {"name": "Subject", "type": "text"},
+      {"name": "From", "type": "text"},
+      {"name": "Date", "type": "datetime"},
+      {"name": "Billing", "type": "text"},
+      {"name": "IT", "type": "text"},
+      {"name": "HR", "type": "text"}
+    ]
+  },
+  "rules": [
+    {
+      "column": "Billing",
+      "keywords": ["invoice", "billing", "payment"],
+      "value": "Yes",
+      "unmatched_value": ""
+    },
+    {
+      "column": "IT",
+      "keywords": ["laptop", "vpn", "password"],
+      "value": "Yes",
+      "unmatched_value": ""
+    },
+    {
+      "column": "HR",
+      "keywords": ["benefits", "onboarding", "policy"],
+      "value": "Yes",
+      "unmatched_value": ""
+    }
+  ],
+  "output": {
+    "format": "excel",
+    "destination": "onedrive",
+    "onedrive_path": "/EmailReports",
+    "filename_template": "email_report_{timestamp}.xlsx"
+  }
+}
