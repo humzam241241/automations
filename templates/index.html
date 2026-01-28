@@ -131,9 +131,46 @@
             </div>
 
             <div class="form-section" id="columnsSection">
-                <label>Columns *</label>
-                <input type="text" id="columns" placeholder="Subject,From,Date,Priority">
+                <label>Columns * <span class="help-toggle" onclick="toggleColumnHelp()">ℹ️ Smart Patterns</span></label>
+                <input type="text" id="columns" placeholder="Subject,From,Date,MI #,CAPA #,Priority">
                 <small>Comma-separated column names</small>
+                
+                <div id="columnHelp" class="help-box" style="display:none;">
+                    <h4>🧠 Intelligent Extraction Patterns</h4>
+                    <p>Type these column names and we'll automatically extract the data:</p>
+                    
+                    <div class="help-grid">
+                        <div class="help-item">
+                            <strong>Reference Numbers:</strong>
+                            <code>MI #</code> → Extracts MI-12345, MI #001<br>
+                            <code>MM #</code> → Extracts MM-12345<br>
+                            <code>CAPA #</code> → Extracts CAPA-001<br>
+                            <code>QE</code> → Extracts QE numbers<br>
+                            <code>EQQ</code> → Extracts EQQ numbers<br>
+                            <code>PO #</code> → Extracts PO-xxx, Purchase Orders<br>
+                            <code>WO #</code> → Extracts Work Orders<br>
+                            <code>NCR</code> → Non-Conformance Reports<br>
+                            <code>CAR</code> → Corrective Actions
+                        </div>
+                        <div class="help-item">
+                            <strong>Standard Fields:</strong>
+                            <code>Subject</code> → Email subject line<br>
+                            <code>From</code> → Sender address<br>
+                            <code>To</code> → Recipient address<br>
+                            <code>Date</code> → Email date<br>
+                            <code>Body</code> → Email body text
+                        </div>
+                        <div class="help-item">
+                            <strong>Smart Extraction:</strong>
+                            <code>Amount</code> → Extracts $100, €50<br>
+                            <code>Priority</code> → High/Normal/Low<br>
+                            <code>Status</code> → Complete/Pending/Open<br>
+                            <code>Lot #</code> → Lot/Batch numbers<br>
+                            <code>Invoice #</code> → Invoice numbers
+                        </div>
+                    </div>
+                    <p class="help-note">💡 Any text with <code>#</code> will look for that prefix + number in emails!</p>
+                </div>
             </div>
 
             <div class="form-section">

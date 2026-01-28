@@ -368,8 +368,17 @@ function toggleAutoDetect() {
         columnsInput.style.background = '#f7fafc';
     } else {
         columnsInput.disabled = false;
-        columnsInput.placeholder = 'Subject,From,Date,Priority';
+        columnsInput.placeholder = 'Subject,From,Date,MI #,CAPA #,Priority';
         columnsInput.style.background = 'white';
+    }
+}
+
+function toggleColumnHelp() {
+    const helpBox = document.getElementById('columnHelp');
+    if (helpBox.style.display === 'none') {
+        helpBox.style.display = 'block';
+    } else {
+        helpBox.style.display = 'none';
     }
 }
 
