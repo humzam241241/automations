@@ -2,3 +2,5 @@ msal
 requests
 openpyxl
 python-dateutil
+flask
+flask-cors

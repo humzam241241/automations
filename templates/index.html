@@ -153,6 +153,31 @@
         </div>
     </div>
 
+    <!-- File Browser Modal -->
+    <div id="fileBrowserModal" class="modal" style="display:none;">
+        <div class="modal-content modal-large">
+            <div class="modal-header">
+                <h2>📁 Browse Files</h2>
+                <button onclick="closeFileBrowser()" class="btn-close">×</button>
+            </div>
+            
+            <div class="file-browser">
+                <div class="browser-path">
+                    <label>Current Location:</label>
+                    <div class="path-display" id="currentPath"></div>
+                </div>
+                
+                <div class="browser-content" id="browserContent">
+                    <!-- File list will be loaded here -->
+                </div>
+            </div>
+
+            <div class="modal-footer">
+                <button onclick="closeFileBrowser()" class="btn-secondary">Cancel</button>
+            </div>
+        </div>
+    </div>
+
     <script src="{{ url_for('static', filename='js/app.js') }}"></script>
 </body>
 </html>

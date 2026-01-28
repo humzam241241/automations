@@ -223,6 +223,84 @@ def detect_columns():
     except Exception as e:
         return jsonify({'success': False, 'message': str(e)}), 400
 
+@app.route('/api/browse-directory', methods=['POST'])
+def browse_directory():
+    """Browse file system."""
+    data = request.json
+    current_path = data.get('path', str(Path.home()))
+    
+    try:
+        path = Path(current_path)
+        
+        # Security: Don't allow going outside user's home directory
+        # Comment this out if you want full system access
+        # if not str(path).startswith(str(Path.home())):
+        #     path = Path.home()
+        
+        if not path.exists():
+            path = Path.home()
+        
+        if not path.is_dir():
+            path = path.parent
+        
+        items = []
+        
+        # Add parent directory
+        if path != path.parent:
+            items.append({
+                'name': '..',
+                'path': str(path.parent),
+                'type': 'directory',
+                'size': '',
+                'modified': ''
+            })
+        
+        # List directories first, then files
+        try:
+            all_items = list(path.iterdir())
+        except PermissionError:
+            return jsonify({'success': False, 'message': 'Permission denied'}), 403
+        
+        directories = sorted([item for item in all_items if item.is_dir()], key=lambda x: x.name.lower())
+        files = sorted([item for item in all_items if item.is_file()], key=lambda x: x.name.lower())
+        
+        for directory in directories:
+            try:
+                items.append({
+                    'name': directory.name,
+                    'path': str(directory),
+                    'type': 'directory',
+                    'size': '',
+                    'modified': datetime.fromtimestamp(directory.stat().st_mtime).strftime('%Y-%m-%d %H:%M')
+                })
+            except:
+                pass
+        
+        for file in files:
+            try:
+                stat = file.stat()
+                size_mb = stat.st_size / (1024 * 1024)
+                items.append({
+                    'name': file.name,
+                    'path': str(file),
+                    'type': 'file',
+                    'extension': file.suffix.lower(),
+                    'size': f'{size_mb:.2f} MB' if size_mb > 1 else f'{stat.st_size / 1024:.1f} KB',
+                    'modified': datetime.fromtimestamp(stat.st_mtime).strftime('%Y-%m-%d %H:%M')
+                })
+            except:
+                pass
+        
+        return jsonify({
+            'success': True,
+            'current_path': str(path),
+            'items': items
+        })
+    
+    except Exception as e:
+        logging.error(f"Browse directory failed: {e}")
+        return jsonify({'success': False, 'message': str(e)}), 400
+
 # ===== MAIN =====
 
 if __name__ == '__main__':

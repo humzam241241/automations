@@ -339,13 +339,20 @@ function updateInputOptions() {
     } else if (inputSource === 'local_eml') {
         optionsDiv.innerHTML = `
             <label>Directory Path</label>
-            <input type="text" id="emlDirectory" value="./input_emails">
+            <div class="file-input-group">
+                <input type="text" id="emlDirectory" value="./input_emails">
+                <button onclick="browseDirectory('emlDirectory')" class="btn-browse">📁 Browse</button>
+            </div>
         `;
     } else if (inputSource === 'excel_file' || inputSource === 'csv_file') {
+        const fileType = inputSource === 'excel_file' ? '.xlsx' : '.csv';
         optionsDiv.innerHTML = `
             <label>File Path</label>
-            <input type="text" id="filePath" placeholder="C:\\path\\to\\file">
-            <button onclick="detectColumns()" class="btn-secondary" style="margin-top: 10px;">Detect Columns</button>
+            <div class="file-input-group">
+                <input type="text" id="filePath" placeholder="C:\\path\\to\\file${fileType}">
+                <button onclick="browseFile('filePath', '${inputSource}')" class="btn-browse">📁 Browse</button>
+            </div>
+            <button onclick="detectColumns()" class="btn-secondary" style="margin-top: 10px; width: 100%;">🔍 Detect Columns</button>
         `;
     }
 }
@@ -513,6 +520,131 @@ function formatDate(dateStr) {
     if (!dateStr) return 'Never';
     const date = new Date(dateStr);
     return date.toLocaleDateString() + ' ' + date.toLocaleTimeString();
+}
+
+// ===== FILE BROWSER =====
+
+let currentBrowserPath = '';
+let browserTargetInput = '';
+let browserFileType = '';
+
+async function browseDirectory(targetInputId) {
+    browserTargetInput = targetInputId;
+    browserFileType = 'directory';
+    
+    // Get initial path from input or use home directory
+    const input = document.getElementById(targetInputId);
+    const initialPath = input.value.trim() || '';
+    
+    await loadDirectory(initialPath || '');
+    document.getElementById('fileBrowserModal').style.display = 'flex';
+}
+
+async function browseFile(targetInputId, fileType) {
+    browserTargetInput = targetInputId;
+    browserFileType = fileType;
+    
+    // Get initial path from input or use home directory
+    const input = document.getElementById(targetInputId);
+    let initialPath = input.value.trim() || '';
+    
+    // If path is a file, get its directory
+    if (initialPath && !initialPath.endsWith('\\') && !initialPath.endsWith('/')) {
+        initialPath = initialPath.substring(0, initialPath.lastIndexOf('\\') || initialPath.lastIndexOf('/'));
+    }
+    
+    await loadDirectory(initialPath || '');
+    document.getElementById('fileBrowserModal').style.display = 'flex';
+}
+
+async function loadDirectory(path) {
+    try {
+        const response = await fetch('/api/browse-directory', {
+            method: 'POST',
+            headers: {'Content-Type': 'application/json'},
+            body: JSON.stringify({path: path})
+        });
+        
+        const data = await response.json();
+        
+        if (data.success) {
+            currentBrowserPath = data.current_path;
+            document.getElementById('currentPath').textContent = data.current_path;
+            
+            const contentDiv = document.getElementById('browserContent');
+            contentDiv.innerHTML = '';
+            
+            if (data.items.length === 0) {
+                contentDiv.innerHTML = '<div style="padding: 20px; text-align: center; color: #999;">Empty directory</div>';
+                return;
+            }
+            
+            data.items.forEach(item => {
+                const itemDiv = document.createElement('div');
+                itemDiv.className = `browser-item ${item.type}`;
+                
+                let icon = '📁';
+                if (item.type === 'file') {
+                    if (item.extension === '.xlsx') icon = '📊';
+                    else if (item.extension === '.csv') icon = '📄';
+                    else if (item.extension === '.eml') icon = '📧';
+                    else if (item.extension === '.msg') icon = '✉️';
+                    else icon = '📄';
+                }
+                
+                itemDiv.innerHTML = `
+                    <div class="browser-icon">${icon}</div>
+                    <div class="browser-info">
+                        <div class="browser-name">${item.name}</div>
+                        <div class="browser-meta">
+                            <span>${item.size}</span>
+                            <span>${item.modified}</span>
+                        </div>
+                    </div>
+                `;
+                
+                if (item.type === 'directory') {
+                    itemDiv.onclick = () => loadDirectory(item.path);
+                } else {
+                    // Only allow selecting appropriate file types
+                    let allowSelection = false;
+                    if (browserFileType === 'excel_file' && item.extension === '.xlsx') {
+                        allowSelection = true;
+                    } else if (browserFileType === 'csv_file' && item.extension === '.csv') {
+                        allowSelection = true;
+                    } else if (browserFileType === 'eml' && (item.extension === '.eml' || item.extension === '.msg')) {
+                        allowSelection = true;
+                    }
+                    
+                    if (allowSelection) {
+                        itemDiv.onclick = () => selectFile(item.path);
+                        itemDiv.style.cursor = 'pointer';
+                    } else {
+                        itemDiv.style.opacity = '0.5';
+                        itemDiv.style.cursor = 'not-allowed';
+                    }
+                }
+                
+                contentDiv.appendChild(itemDiv);
+            });
+        } else {
+            alert(`Failed to load directory: ${data.message}`);
+        }
+    } catch (error) {
+        console.error('Failed to load directory:', error);
+        alert('Failed to load directory');
+    }
+}
+
+function selectFile(path) {
+    const input = document.getElementById(browserTargetInput);
+    input.value = path;
+    closeFileBrowser();
+    log(`Selected file: ${path}`, 'info');
+}
+
+function closeFileBrowser() {
+    document.getElementById('fileBrowserModal').style.display = 'none';
 }
 
 // Allow Enter key to login
