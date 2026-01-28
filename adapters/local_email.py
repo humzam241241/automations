@@ -16,12 +16,14 @@ try:
         extract_attachment_from_bytes,
         extract_excel_rows_from_bytes
     )
+    from .table_extractor import extract_body_table_rows
 except ImportError:
     from adapters.attachment_reader import (
         extract_text_from_file, 
         extract_attachment_from_bytes,
         extract_excel_rows_from_bytes
     )
+    from adapters.table_extractor import extract_body_table_rows
 
 
 class LocalEmailAdapter:
@@ -198,8 +200,10 @@ class LocalEmailAdapter:
         to_addr = msg.get("To", "")
         date_str = msg.get("Date", "")
         
-        # Extract body
+        # Extract body (keep both plain text and HTML for table extraction)
         body = ""
+        html_body = ""  # Keep raw HTML for table extraction
+        
         if msg.is_multipart():
             for part in msg.walk():
                 if part.get_content_type() == "text/plain":
@@ -207,19 +211,27 @@ class LocalEmailAdapter:
                         body += part.get_content()
                     except:
                         pass
-                elif part.get_content_type() == "text/html" and not body:
-                    # Fallback to HTML if no plain text
+                elif part.get_content_type() == "text/html":
                     try:
                         import re
-                        html = part.get_content()
-                        # Strip HTML tags
-                        body = re.sub(r'<[^>]+>', ' ', html)
-                        body = re.sub(r'\s+', ' ', body).strip()
+                        html_body = part.get_content()  # Keep raw HTML
+                        if not body:
+                            # Also create plain text version
+                            body = re.sub(r'<[^>]+>', ' ', html_body)
+                            body = re.sub(r'\s+', ' ', body).strip()
                     except:
                         pass
         else:
             try:
-                body = msg.get_content()
+                content = msg.get_content()
+                content_type = msg.get_content_type()
+                if content_type == "text/html":
+                    html_body = content
+                    import re
+                    body = re.sub(r'<[^>]+>', ' ', content)
+                    body = re.sub(r'\s+', ' ', body).strip()
+                else:
+                    body = content
             except:
                 body = ""
         
@@ -266,6 +278,16 @@ class LocalEmailAdapter:
                         except Exception as e:
                             print(f"Could not extract from attachment {filename}: {e}")
         
+        # If no Excel rows from attachments, try extracting tables from email body
+        if not excel_rows and self.extract_attachments:
+            try:
+                body_rows = extract_body_table_rows(body, html_body)
+                if body_rows:
+                    print(f"Found {len(body_rows)} rows in email body table")
+                    excel_rows = body_rows
+            except Exception as e:
+                print(f"Could not extract table from body: {e}")
+        
         return {
             "id": msg.get("Message-ID", ""),
             "subject": subject,
@@ -273,9 +295,10 @@ class LocalEmailAdapter:
             "to": to_addr,
             "date": date_str,
             "body": body,
+            "html_body": html_body,  # Keep for debugging
             "attachments": attachments,
             "attachment_text": attachment_texts,
-            "excel_rows": excel_rows,  # NEW: Structured Excel data
+            "excel_rows": excel_rows,  # Structured data (from Excel OR body table)
             "source_file": source_path,
         }
     
