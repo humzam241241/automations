@@ -16,24 +16,19 @@ echo      - Runs on localhost:3000
 echo      - Multi-user support
 echo      - File browser with visual navigation
 echo.
-echo  [2] Desktop GUI
-echo      - Native window interface
-echo      - Traditional desktop app
-echo.
-echo  [3] CLI Wizard
+echo  [2] CLI Wizard
 echo      - Command-line interface
 echo      - Step-by-step prompts
 echo.
-echo  [4] Exit
+echo  [3] Exit
 echo.
 echo ============================================================
 echo.
-set /p choice="Enter your choice (1-4): "
+set /p choice="Enter your choice (1-3): "
 
 if "%choice%"=="1" goto web
-if "%choice%"=="2" goto desktop
-if "%choice%"=="3" goto cli
-if "%choice%"=="4" goto end
+if "%choice%"=="2" goto cli
+if "%choice%"=="3" goto end
 
 echo Invalid choice. Please try again.
 timeout /t 2 /nobreak >nul
@@ -50,24 +45,13 @@ echo          Your browser will open to:
 echo          http://localhost:3000
 echo.
 echo          Press Ctrl+C to stop the server
+echo          The window will stay open if the server exits.
 echo.
 echo ============================================================
 echo.
 timeout /t 2 /nobreak >nul
 start http://localhost:3000
-python app.py
-goto end
-
-:desktop
-cls
-echo.
-echo ============================================================
-echo.
-echo          Starting Desktop GUI...
-echo.
-echo ============================================================
-echo.
-python run_gui.py
+cmd /k python app.py
 goto end
 
 :cli
@@ -84,5 +68,5 @@ goto end
 
 :end
 echo.
-echo Goodbye!
-timeout /t 1 /nobreak >nul
+echo Session ended. Close this window when ready.
+pause
