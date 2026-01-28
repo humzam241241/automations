@@ -197,6 +197,97 @@ def run_profile(name):
     result = execute()
     return jsonify(result)
 
+@app.route('/api/synonyms')
+def get_synonyms():
+    """Get all synonyms."""
+    try:
+        config_path = Path("config/synonyms.json")
+        if config_path.exists():
+            with open(config_path, 'r', encoding='utf-8') as f:
+                data = json.load(f)
+                return jsonify({
+                    'success': True,
+                    'synonyms': data.get('synonyms', {})
+                })
+        return jsonify({'success': True, 'synonyms': {}})
+    except Exception as e:
+        return jsonify({'success': False, 'message': str(e)}), 400
+
+@app.route('/api/synonyms', methods=['POST'])
+def save_synonyms():
+    """Save synonyms."""
+    try:
+        data = request.json
+        synonyms = data.get('synonyms', {})
+        
+        config_path = Path("config/synonyms.json")
+        
+        # Load existing config to preserve other fields
+        existing = {}
+        if config_path.exists():
+            with open(config_path, 'r', encoding='utf-8') as f:
+                existing = json.load(f)
+        
+        # Update synonyms
+        existing['synonyms'] = synonyms
+        existing['_description'] = "Column name synonyms - add your own mappings here!"
+        
+        # Save
+        with open(config_path, 'w', encoding='utf-8') as f:
+            json.dump(existing, f, indent=2)
+        
+        return jsonify({'success': True})
+    except Exception as e:
+        return jsonify({'success': False, 'message': str(e)}), 400
+
+@app.route('/api/synonyms/reset', methods=['POST'])
+def reset_synonyms():
+    """Reset synonyms to defaults."""
+    try:
+        default_synonyms = {
+            "qc": ["quality criticality", "quality crit", "criticality", "qc level"],
+            "quality criticality": ["qc", "quality crit", "criticality"],
+            "wo": ["work order", "work order number", "workorder", "wo #", "wo number"],
+            "work order": ["wo", "wo #", "work order number", "workorder"],
+            "order": ["order number", "order #", "order no", "order id"],
+            "order type": ["order type", "type", "wo type"],
+            "equipment": ["equipment id", "equip", "eq", "equipment number", "equip #"],
+            "building": ["bldg", "bldg #", "building number", "building #", "bld"],
+            "date": ["due date", "finish date", "completion date", "date completed"],
+            "due date": ["initial due date", "target date", "deadline", "due"],
+            "status": ["completion status", "state", "current status"],
+            "completion status": ["status", "complete status", "completed"],
+            "description": ["desc", "details", "description of technical object"],
+            "main work center": ["work center", "mwc", "center", "main center"],
+            "comments": ["notes", "remarks", "reconciliation comments"],
+            "mi": ["mi #", "mi number", "mi no"],
+            "mm": ["mm #", "mm number", "mm no"],
+            "capa": ["capa #", "capa number", "capa no"],
+            "from": ["sender", "sent by", "from address"],
+            "to": ["recipient", "sent to", "to address"],
+            "subject": ["title", "topic", "re", "subj"]
+        }
+        
+        config_path = Path("config/synonyms.json")
+        config_data = {
+            "_description": "Column name synonyms - add your own mappings here!",
+            "synonyms": default_synonyms,
+            "abbreviations": {
+                "qc": "Quality Criticality",
+                "wo": "Work Order",
+                "eq": "Equipment",
+                "bldg": "Building",
+                "mwc": "Main Work Center"
+            }
+        }
+        
+        with open(config_path, 'w', encoding='utf-8') as f:
+            json.dump(config_data, f, indent=2)
+        
+        return jsonify({'success': True, 'synonyms': default_synonyms})
+    except Exception as e:
+        return jsonify({'success': False, 'message': str(e)}), 400
+
 @app.route('/api/detect-columns', methods=['POST'])
 def detect_columns():
     """Auto-detect columns from file."""

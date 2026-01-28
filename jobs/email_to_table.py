@@ -281,12 +281,12 @@ def _extract_number_only(column_name: str, content: str) -> str:
     return ""
 
 
-def smart_search_column(email_data: Dict, column_name: str, extract_type: str = "auto") -> str:
+def smart_search_column(email_data: Dict, column_name: str, extract_type: str = "auto", use_synonyms: bool = True) -> str:
     """
     FULLY INTELLIGENT column extraction - works with ANY column name!
     
     Now supports:
-    - SYNONYMS: "QC" matches "Quality Criticality"
+    - SYNONYMS: "QC" matches "Quality Criticality" (can be disabled)
     - Explicit TYPE to prevent wrong extractions
     - Row association: values on same line stay together
     
@@ -303,6 +303,7 @@ def smart_search_column(email_data: Dict, column_name: str, extract_type: str = 
         email_data: Email dict
         column_name: ANY column name the user types
         extract_type: The expected value type
+        use_synonyms: If True, use synonym matching
     
     Returns:
         Extracted value based on type
@@ -320,8 +321,8 @@ def smart_search_column(email_data: Dict, column_name: str, extract_type: str = 
     
     column_lower = column_name.lower().strip()
     
-    # Get all synonyms for this column
-    column_synonyms = get_synonyms(column_name)
+    # Get synonyms only if enabled
+    column_synonyms = get_synonyms(column_name) if use_synonyms else [column_name]
     
     # ============================================================
     # EXPLICIT TYPE HANDLING - User selected a specific type
@@ -619,7 +620,8 @@ def email_to_record(
     email_data: Dict,
     schema: Dict,
     rules: List[Dict],
-    explain: bool = False
+    explain: bool = False,
+    use_synonyms: bool = True
 ) -> Tuple[Dict[str, str], Dict]:
     """
     Convert email to record dict (NEW canonical format).
@@ -629,6 +631,7 @@ def email_to_record(
         schema: Schema dict with {columns: [{name, type, extract_type}, ...]}
         rules: List of keyword/regex rules
         explain: If True, return explanation of which rules matched
+        use_synonyms: If True, use synonym matching (QC = Quality Criticality)
     
     Returns:
         (record_dict, explanation_dict)
@@ -652,35 +655,36 @@ def email_to_record(
         
         # Priority 1: Direct value from data (Excel/CSV already has values in columns!)
         # Check if email_data already has this column's value directly
-        # Uses synonym matching: "QC" matches "Quality Criticality"
+        # Optionally uses synonym matching: "QC" matches "Quality Criticality"
         direct_value = None
         matched_key = None
         
-        # Get all synonyms for this column
-        col_synonyms = get_synonyms(col_name)
+        # Get synonyms if enabled
+        col_synonyms = get_synonyms(col_name) if use_synonyms else [col_name]
         
         for key in email_data.keys():
-            # Direct match
+            # Direct match (always check)
             if key.lower() == col_name.lower() or key == col_name:
                 direct_value = email_data.get(key, "")
                 matched_key = key
                 break
             
-            # Synonym match
-            if columns_match(key, col_name):
-                direct_value = email_data.get(key, "")
-                matched_key = key
-                break
-            
-            # Check against all synonyms
-            for syn in col_synonyms:
-                if key.lower() == syn.lower() or syn.lower() in key.lower() or key.lower() in syn.lower():
+            # Synonym match (only if enabled)
+            if use_synonyms:
+                if columns_match(key, col_name):
                     direct_value = email_data.get(key, "")
                     matched_key = key
                     break
-            
-            if direct_value:
-                break
+                
+                # Check against all synonyms
+                for syn in col_synonyms:
+                    if key.lower() == syn.lower() or syn.lower() in key.lower() or key.lower() in syn.lower():
+                        direct_value = email_data.get(key, "")
+                        matched_key = key
+                        break
+                
+                if direct_value:
+                    break
         
         if direct_value and str(direct_value).strip():
             record[col_name] = str(direct_value).strip()
@@ -711,7 +715,7 @@ def email_to_record(
         
         # Priority 4: Smart search - use column name and TYPE for extraction
         else:
-            smart_value = smart_search_column(email_data, col_name, col_type)
+            smart_value = smart_search_column(email_data, col_name, col_type, use_synonyms)
             record[col_name] = smart_value
             
             if explain and smart_value:

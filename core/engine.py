@@ -112,12 +112,15 @@ class ExecutionEngine:
         """Execute email_to_table job."""
         schema = profile.get("schema", {})
         rules = profile.get("rules", [])
+        use_synonyms = profile.get("use_synonyms", True)  # Default to True
         
         records = []
         explanations = []
         
         for email_data in emails:
-            record, explanation = email_to_record(email_data, schema, rules, explain)
+            record, explanation = email_to_record(
+                email_data, schema, rules, explain, use_synonyms
+            )
             records.append(record)
             if explain:
                 explanations.append(explanation)

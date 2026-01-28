@@ -214,6 +214,14 @@
                     </select>
                     <small id="outputHint" class="hint">Smart default based on input type</small>
                 </div>
+                
+                <div class="form-section synonym-section">
+                    <label>
+                        <input type="checkbox" id="useSynonyms" checked>
+                        Use Synonyms <small>(QC = Quality Criticality, WO = Work Order, etc.)</small>
+                    </label>
+                    <button type="button" onclick="openSynonymManager()" class="btn-link">⚙️ Manage Synonyms</button>
+                </div>
             </div>
 
             <div class="modal-footer">
@@ -223,6 +231,40 @@
         </div>
     </div>
 
+    <!-- Synonym Manager Modal -->
+    <div id="synonymModal" class="modal" style="display:none;">
+        <div class="modal-content modal-large modal-scrollable">
+            <div class="modal-header">
+                <h2>⚙️ Synonym Manager</h2>
+                <button onclick="closeSynonymManager()" class="btn-close">×</button>
+            </div>
+            
+            <div class="modal-body">
+                <p class="synonym-intro">Synonyms allow columns with different names to match. For example, "QC" will automatically find data labeled "Quality Criticality".</p>
+                
+                <div class="synonym-list" id="synonymList">
+                    <!-- Synonyms will be loaded here -->
+                </div>
+                
+                <div class="add-synonym-section">
+                    <h4>➕ Add New Synonym</h4>
+                    <div class="add-synonym-row">
+                        <input type="text" id="newSynonymKey" placeholder="Column name (e.g., QC)">
+                        <span class="synonym-equals">=</span>
+                        <input type="text" id="newSynonymValues" placeholder="Synonyms, comma-separated (e.g., Quality Criticality, Quality Crit)">
+                        <button onclick="addSynonym()" class="btn-add-column">+ Add</button>
+                    </div>
+                </div>
+            </div>
+
+            <div class="modal-footer">
+                <button onclick="resetSynonyms()" class="btn-danger">Reset to Defaults</button>
+                <button onclick="closeSynonymManager()" class="btn-secondary">Close</button>
+                <button onclick="saveSynonyms()" class="btn-primary">Save Changes</button>
+            </div>
+        </div>
+    </div>
+    
     <!-- File Browser Modal (Fallback - Advanced Users) -->
     <div id="fileBrowserModal" class="modal" style="display:none;">
         <div class="modal-content modal-large">

@@ -329,6 +329,10 @@ function editProfile() {
         }
     }
     
+    // Set synonyms toggle
+    const useSynonyms = currentProfile.use_synonyms !== false;  // Default true
+    document.getElementById('useSynonyms').checked = useSynonyms;
+    
     // Show modal
     document.getElementById('createProfileModal').style.display = 'flex';
 }
@@ -376,6 +380,7 @@ function showCreateProfile() {
     document.getElementById('inputSource').value = 'graph';
     document.getElementById('autoDetect').checked = false;
     document.getElementById('outputType').value = 'excel';
+    document.getElementById('useSynonyms').checked = true;  // Default to enabled
     
     // Clear and reset the column builder
     clearColumns();
@@ -676,7 +681,8 @@ async function saveProfile() {
             destination: outputType === 'bi_dashboard' ? 'bi_dashboard' : 'local',
             local_path: './output',
             also_export_bi: outputType === 'both'
-        }
+        },
+        use_synonyms: document.getElementById('useSynonyms').checked
     };
     
     // Add input-specific options
@@ -1137,6 +1143,146 @@ function selectDirectory(path) {
 
 function closeFileBrowser() {
     document.getElementById('fileBrowserModal').style.display = 'none';
+}
+
+// ===== SYNONYM MANAGER =====
+
+let synonymsData = {};
+
+async function openSynonymManager() {
+    document.getElementById('synonymModal').style.display = 'flex';
+    await loadSynonyms();
+}
+
+function closeSynonymManager() {
+    document.getElementById('synonymModal').style.display = 'none';
+}
+
+async function loadSynonyms() {
+    try {
+        const response = await fetch('/api/synonyms');
+        const data = await response.json();
+        
+        if (data.success) {
+            synonymsData = data.synonyms || {};
+            renderSynonyms();
+        }
+    } catch (error) {
+        console.error('Failed to load synonyms:', error);
+    }
+}
+
+function renderSynonyms() {
+    const list = document.getElementById('synonymList');
+    const entries = Object.entries(synonymsData);
+    
+    if (entries.length === 0) {
+        list.innerHTML = '<p style="text-align: center; color: #999;">No synonyms defined. Add some below!</p>';
+        return;
+    }
+    
+    list.innerHTML = entries.map(([key, values]) => `
+        <div class="synonym-item" data-key="${escapeHtml(key)}">
+            <span class="synonym-key">${escapeHtml(key)}</span>
+            <span class="synonym-equals">=</span>
+            <div class="synonym-values">
+                ${Array.isArray(values) ? values.map(v => `<span>${escapeHtml(v)}</span>`).join('') : `<span>${escapeHtml(values)}</span>`}
+            </div>
+            <button class="synonym-delete" onclick="deleteSynonym('${escapeHtml(key)}')" title="Delete">×</button>
+        </div>
+    `).join('');
+}
+
+function addSynonym() {
+    const keyInput = document.getElementById('newSynonymKey');
+    const valuesInput = document.getElementById('newSynonymValues');
+    
+    const key = keyInput.value.trim().toLowerCase();
+    const valuesStr = valuesInput.value.trim();
+    
+    if (!key) {
+        alert('Please enter a column name');
+        keyInput.focus();
+        return;
+    }
+    
+    if (!valuesStr) {
+        alert('Please enter at least one synonym');
+        valuesInput.focus();
+        return;
+    }
+    
+    // Parse values (comma-separated)
+    const values = valuesStr.split(',').map(v => v.trim().toLowerCase()).filter(v => v);
+    
+    if (values.length === 0) {
+        alert('Please enter valid synonyms');
+        return;
+    }
+    
+    // Add to data
+    synonymsData[key] = values;
+    
+    // Clear inputs
+    keyInput.value = '';
+    valuesInput.value = '';
+    
+    // Re-render
+    renderSynonyms();
+    
+    log(`Added synonym: ${key} = ${values.join(', ')}`, 'info');
+}
+
+function deleteSynonym(key) {
+    if (confirm(`Delete synonym "${key}"?`)) {
+        delete synonymsData[key];
+        renderSynonyms();
+        log(`Deleted synonym: ${key}`, 'info');
+    }
+}
+
+async function saveSynonyms() {
+    try {
+        const response = await fetch('/api/synonyms', {
+            method: 'POST',
+            headers: {'Content-Type': 'application/json'},
+            body: JSON.stringify({ synonyms: synonymsData })
+        });
+        
+        const data = await response.json();
+        
+        if (data.success) {
+            log('✓ Synonyms saved!', 'success');
+            closeSynonymManager();
+        } else {
+            alert('Failed to save synonyms: ' + data.message);
+        }
+    } catch (error) {
+        console.error('Failed to save synonyms:', error);
+        alert('Failed to save synonyms');
+    }
+}
+
+async function resetSynonyms() {
+    if (!confirm('Reset all synonyms to defaults? This will remove any custom synonyms you added.')) {
+        return;
+    }
+    
+    try {
+        const response = await fetch('/api/synonyms/reset', {
+            method: 'POST'
+        });
+        
+        const data = await response.json();
+        
+        if (data.success) {
+            synonymsData = data.synonyms || {};
+            renderSynonyms();
+            log('✓ Synonyms reset to defaults', 'success');
+        }
+    } catch (error) {
+        console.error('Failed to reset synonyms:', error);
+    }
 }
 
 // Allow Enter key to login
