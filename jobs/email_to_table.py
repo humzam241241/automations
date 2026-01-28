@@ -4,6 +4,12 @@ Core job: Extract emails into tabular data based on schema and rules.
 import re
 from typing import Dict, List, Tuple
 
+# Import synonym resolver
+try:
+    from .synonym_resolver import get_synonyms, columns_match, get_resolver
+except ImportError:
+    from jobs.synonym_resolver import get_synonyms, columns_match, get_resolver
+
 
 def normalize_text(text: str) -> str:
     """Normalize text for keyword matching."""
@@ -212,9 +218,13 @@ def extract_email_fields(email_data: Dict) -> Dict[str, str]:
 
 def _extract_number_only(column_name: str, content: str) -> str:
     """
-    Extract ONLY numbers/IDs - NEVER returns "Yes".
+    Extract numbers/IDs - handles various formats:
+    - "MI #12345" → MI-12345
+    - "4000390042 ZM03" → 4000390042 ZM03 (number + code)
+    - "TORFER0048" → TORFER0048 (letters + numbers mixed)
+    - "B89" → B89 (short code)
     
-    For columns like "MI #", "Building Number", "Work Order ID".
+    NEVER returns "Yes".
     """
     column_lower = column_name.lower().strip()
     
@@ -224,26 +234,50 @@ def _extract_number_only(column_name: str, content: str) -> str:
         prefix = re.sub(rf'\s*{re.escape(suffix)}\s*$', '', prefix, flags=re.IGNORECASE)
     prefix = prefix.strip()
     
-    # If we have a prefix, search for PREFIX + NUMBER
+    # STRATEGY 1: Look for "ColumnName: value" pattern first (most reliable)
+    patterns_with_label = [
+        rf'{re.escape(column_name)}\s*[:\-=]\s*([^\n,;]+)',  # Order: 4000390042 ZM03
+        rf'{re.escape(prefix)}\s*[:\-=]\s*([^\n,;]+)',  # Order: value
+    ]
+    
+    for pattern in patterns_with_label:
+        match = re.search(pattern, content, re.IGNORECASE)
+        if match:
+            value = match.group(1).strip()
+            # Clean up - remove trailing punctuation but keep alphanumeric + spaces
+            value = re.sub(r'[,;:\s]+$', '', value)
+            if value and len(value) < 50:
+                return value
+    
+    # STRATEGY 2: If we have a prefix, search for PREFIX + NUMBER
     if prefix:
         extracted = extract_prefix_numbers(prefix, content)
         if extracted:
             return extracted
     
-    # If column name is just a short code (MI, QE, MM), search directly
+    # STRATEGY 3: If column name is just a short code (MI, QE, MM), search directly
     column_stripped = re.sub(r'[#\s\.\-_]+', '', column_name)
-    if len(column_stripped) <= 5 and column_stripped.isupper():
+    if len(column_stripped) <= 6 and column_stripped.isupper():
         extracted = extract_prefix_numbers(column_stripped, content)
         if extracted:
             return extracted
     
-    # Last resort: look for "ColumnName: 12345" pattern
-    pattern = rf'{re.escape(column_name)}\s*[:\-=]\s*(\d[\d\-]*)'
-    match = re.search(pattern, content, re.IGNORECASE)
-    if match:
-        return match.group(1)
+    # STRATEGY 4: Look for alphanumeric codes that match the column pattern
+    # e.g., column "Equipment" might have values like "TORFER0048"
+    if column_lower in ['equipment', 'order', 'work order', 'building', 'code', 'id', 'reference']:
+        # Look for alphanumeric patterns: letters+numbers or numbers+letters
+        alphanumeric_patterns = [
+            r'\b([A-Z]{2,}[0-9]{2,})\b',  # TORFER0048, ZM03
+            r'\b([0-9]{6,}\s*[A-Z]{2,}[0-9]*)\b',  # 4000390042 ZM03
+            r'\b([A-Z][0-9]{2,})\b',  # B89, M123
+        ]
+        for pattern in alphanumeric_patterns:
+            matches = re.findall(pattern, content)
+            if matches:
+                # Return first few unique matches
+                unique = list(dict.fromkeys(matches))[:5]
+                return "; ".join(unique)
     
-    # Return empty string - NOT "Yes"!
     return ""
 
 
@@ -251,7 +285,12 @@ def smart_search_column(email_data: Dict, column_name: str, extract_type: str = 
     """
     FULLY INTELLIGENT column extraction - works with ANY column name!
     
-    Now supports explicit TYPE to prevent wrong extractions:
+    Now supports:
+    - SYNONYMS: "QC" matches "Quality Criticality"
+    - Explicit TYPE to prevent wrong extractions
+    - Row association: values on same line stay together
+    
+    Types:
     - "number" → ONLY extract numbers, never return "Yes"
     - "text" → Extract text values
     - "date" → Extract dates
@@ -263,7 +302,7 @@ def smart_search_column(email_data: Dict, column_name: str, extract_type: str = 
     Args:
         email_data: Email dict
         column_name: ANY column name the user types
-        extract_type: The expected value type (number, text, date, amount, yesno, auto)
+        extract_type: The expected value type
     
     Returns:
         Extracted value based on type
@@ -281,6 +320,9 @@ def smart_search_column(email_data: Dict, column_name: str, extract_type: str = 
     
     column_lower = column_name.lower().strip()
     
+    # Get all synonyms for this column
+    column_synonyms = get_synonyms(column_name)
+    
     # ============================================================
     # EXPLICIT TYPE HANDLING - User selected a specific type
     # This prevents "Yes" being returned when expecting a number
@@ -288,7 +330,12 @@ def smart_search_column(email_data: Dict, column_name: str, extract_type: str = 
     
     if extract_type == "number":
         # USER WANTS NUMBERS ONLY - never return "Yes"
-        return _extract_number_only(column_name, all_content)
+        # Try column name and all synonyms
+        for name in [column_name] + column_synonyms:
+            result = _extract_number_only(name, all_content)
+            if result:
+                return result
+        return ""
     
     elif extract_type == "date":
         # USER WANTS DATES ONLY
@@ -324,13 +371,34 @@ def smart_search_column(email_data: Dict, column_name: str, extract_type: str = 
         return "Yes" if re.search(pattern, all_content_lower) else "No"
     
     elif extract_type == "text":
-        # USER WANTS TEXT - extract value after "Column: value"
-        extract_pattern = rf'{re.escape(column_name)}\s*[:\-=]\s*([^\n,;]+)'
-        match = re.search(extract_pattern, all_content, re.IGNORECASE)
-        if match:
-            value = match.group(1).strip()
-            if 0 < len(value) < 200:
-                return value
+        # USER WANTS TEXT - extract value after "Column: value" or from table
+        # Uses SYNONYMS: "QC" matches "Quality Criticality"
+        
+        # Build patterns for column name AND all its synonyms
+        search_names = [column_name] + column_synonyms
+        
+        for name in search_names:
+            patterns = [
+                # Standard "Label: Value" format
+                rf'{re.escape(name)}\s*[:\-=]\s*([^\n\t]+)',
+                # Table format with tab separator
+                rf'{re.escape(name)}\t+([^\t\n]+)',
+                # Table format with multiple spaces
+                rf'{re.escape(name)}\s{{2,}}([^\s].*?)(?:\s{{2,}}|$)',
+            ]
+            
+            for pattern in patterns:
+                try:
+                    match = re.search(pattern, all_content, re.IGNORECASE)
+                    if match:
+                        value = match.group(1).strip()
+                        # Clean up extra whitespace but keep the value
+                        value = re.sub(r'\s+', ' ', value).strip()
+                        if 0 < len(value) < 200:
+                            return value
+                except re.error:
+                    continue
+        
         return ""
     
     elif extract_type == "email_field":
@@ -458,15 +526,16 @@ def smart_search_column(email_data: Dict, column_name: str, extract_type: str = 
 
 def extract_prefix_numbers(prefix: str, content: str) -> str:
     """
-    Extract all numbers associated with a prefix from content.
+    Extract all numbers/codes associated with a prefix from content.
     
-    Works with ANY prefix:
+    Handles various formats:
     - "MI" → finds MI-12345, MI #001, MI: 123, MI123
-    - "Building" → finds Building 5, Building-12, Building: 100
-    - "Work Order" → finds Work Order 12345, WO-001
+    - "Building" → finds Building 5, Building-12, B89
+    - "Order" → finds 4000390042 ZM03, Order: 12345
+    - "Equipment" → finds TORFER0048, EQ-123
     
     Args:
-        prefix: The identifier prefix (e.g., "MI", "Building", "Work Order")
+        prefix: The identifier prefix (e.g., "MI", "Building", "Order")
         content: The email content to search
     
     Returns:
@@ -474,6 +543,25 @@ def extract_prefix_numbers(prefix: str, content: str) -> str:
     """
     extracted = []
     prefix_clean = prefix.strip()
+    prefix_lower = prefix_clean.lower()
+    
+    # FIRST: Try to find "Prefix: value" or "Prefix\tvalue" patterns (for table data)
+    table_patterns = [
+        rf'{re.escape(prefix_clean)}\s*[:\t]\s*([^\n\t]+)',  # Order: 4000390042 ZM03
+        rf'^{re.escape(prefix_clean)}\s+(.+)$',  # Order    4000390042
+    ]
+    
+    for pattern in table_patterns:
+        matches = re.findall(pattern, content, re.IGNORECASE | re.MULTILINE)
+        for match in matches:
+            value = match.strip()
+            # Clean up - take first meaningful part
+            value = re.split(r'\s{2,}|\t', value)[0].strip()
+            if value and len(value) < 50 and value not in extracted:
+                extracted.append(value)
+    
+    if extracted:
+        return "; ".join(extracted[:5])
     
     # Build search variations
     variations = [prefix_clean]
@@ -492,10 +580,14 @@ def extract_prefix_numbers(prefix: str, content: str) -> str:
     for var in variations:
         # Multiple patterns to catch different formats
         patterns = [
-            # PREFIX followed by separator then numbers: MI-12345, MI #001, MI: 123
-            rf'(?<![A-Za-z]){re.escape(var)}\s*[#:\-_/\.]*\s*(\d[\d\-]*\d|\d+)',
+            # PREFIX followed by separator then numbers/alphanumeric: MI-12345, MI #001
+            rf'(?<![A-Za-z]){re.escape(var)}\s*[#:\-_/\.]*\s*(\d[\d\-A-Za-z]*)',
             # PREFIX immediately followed by numbers: MI12345
             rf'(?<![A-Za-z]){re.escape(var)}(\d+)',
+            # Number followed by PREFIX: 4000390042 ZM03
+            rf'(\d{{6,}}\s*{re.escape(var)}[0-9]*)',
+            # Short letter-number codes: B89, M01
+            rf'\b({re.escape(var[0]) if var else ""}[0-9]{{2,}})\b',
         ]
         
         for pattern in patterns:
@@ -503,10 +595,13 @@ def extract_prefix_numbers(prefix: str, content: str) -> str:
                 matches = re.findall(pattern, content, re.IGNORECASE)
                 for match in matches:
                     # Clean and format the result
-                    num = match.strip('-').strip()
-                    if num and len(num) >= 1:
-                        # Format as PREFIX-NUMBER
-                        formatted = f"{var.upper()}-{num}"
+                    value = match.strip('-').strip()
+                    if value and len(value) >= 1:
+                        # Don't double-prefix
+                        if not value.upper().startswith(var.upper()):
+                            formatted = f"{var.upper()}-{value}"
+                        else:
+                            formatted = value
                         formatted = re.sub(r'-+', '-', formatted)  # Clean double dashes
                         if formatted not in extracted:
                             extracted.append(formatted)
@@ -555,8 +650,51 @@ def email_to_record(
         col_name = col.get("name", col.get("header", ""))
         col_type = col.get("extract_type", col.get("type", "auto"))  # Get column type
         
-        # Priority 1: Standard email fields (Subject, From, To, Date, Body, etc.)
-        if col_name in standard_fields and standard_fields[col_name]:
+        # Priority 1: Direct value from data (Excel/CSV already has values in columns!)
+        # Check if email_data already has this column's value directly
+        # Uses synonym matching: "QC" matches "Quality Criticality"
+        direct_value = None
+        matched_key = None
+        
+        # Get all synonyms for this column
+        col_synonyms = get_synonyms(col_name)
+        
+        for key in email_data.keys():
+            # Direct match
+            if key.lower() == col_name.lower() or key == col_name:
+                direct_value = email_data.get(key, "")
+                matched_key = key
+                break
+            
+            # Synonym match
+            if columns_match(key, col_name):
+                direct_value = email_data.get(key, "")
+                matched_key = key
+                break
+            
+            # Check against all synonyms
+            for syn in col_synonyms:
+                if key.lower() == syn.lower() or syn.lower() in key.lower() or key.lower() in syn.lower():
+                    direct_value = email_data.get(key, "")
+                    matched_key = key
+                    break
+            
+            if direct_value:
+                break
+        
+        if direct_value and str(direct_value).strip():
+            record[col_name] = str(direct_value).strip()
+            if explain:
+                explanations[col_name] = {
+                    "matched": True,
+                    "match_type": "direct_column",
+                    "matched_term": col_name,
+                    "search_in": ["data_row"],
+                    "snippet": str(direct_value)[:50],
+                }
+        
+        # Priority 2: Standard email fields (Subject, From, To, Date, Body, etc.)
+        elif col_name in standard_fields and standard_fields[col_name]:
             record[col_name] = standard_fields[col_name]
             if explain:
                 explanations[col_name] = {
@@ -567,11 +705,11 @@ def email_to_record(
                     "snippet": str(standard_fields[col_name])[:50],
                 }
         
-        # Priority 2: Explicit rule results
+        # Priority 3: Explicit rule results
         elif col_name in rule_results and rule_results[col_name]:
             record[col_name] = rule_results[col_name]
         
-        # Priority 3: Smart search - use column name and TYPE for extraction
+        # Priority 4: Smart search - use column name and TYPE for extraction
         else:
             smart_value = smart_search_column(email_data, col_name, col_type)
             record[col_name] = smart_value

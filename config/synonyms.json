@@ -1,0 +1,56 @@
+{
+  "_description": "Column name synonyms - add your own mappings here!",
+  "_usage": "When searching for 'QC', it will also search for 'Quality Criticality', etc.",
+  
+  "synonyms": {
+    "qc": ["quality criticality", "quality crit", "criticality", "qc level"],
+    "quality criticality": ["qc", "quality crit", "criticality"],
+    
+    "wo": ["work order", "work order number", "workorder", "wo #", "wo number"],
+    "work order": ["wo", "wo #", "work order number", "workorder"],
+    
+    "order": ["order number", "order #", "order no", "order id"],
+    "order type": ["order type", "type", "wo type"],
+    
+    "equipment": ["equipment id", "equip", "eq", "equipment number", "equip #"],
+    
+    "building": ["bldg", "bldg #", "building number", "building #", "bld"],
+    
+    "date": ["due date", "finish date", "completion date", "date completed"],
+    "due date": ["initial due date", "target date", "deadline", "due"],
+    "basic finish date": ["finish date", "completion date", "end date"],
+    "initial due date": ["due date", "target date", "original due date"],
+    
+    "status": ["completion status", "state", "current status"],
+    "completion status": ["status", "complete status", "completed"],
+    
+    "description": ["desc", "details", "description of technical object", "technical description"],
+    
+    "main work center": ["work center", "mwc", "center", "main center"],
+    
+    "comments": ["notes", "remarks", "reconciliation comments", "maintenance comments"],
+    "maintenance/metro reconciliation comments": ["comments", "reconciliation", "maint comments"],
+    
+    "mi": ["mi #", "mi number", "mi no"],
+    "mm": ["mm #", "mm number", "mm no"],
+    "capa": ["capa #", "capa number", "capa no"],
+    
+    "priority": ["urgency", "importance", "priority level"],
+    "amount": ["cost", "total", "price", "value", "$"],
+    
+    "from": ["sender", "sent by", "from address"],
+    "to": ["recipient", "sent to", "to address"],
+    "subject": ["title", "topic", "re", "subj"]
+  },
+  
+  "abbreviations": {
+    "qc": "Quality Criticality",
+    "wo": "Work Order",
+    "eq": "Equipment",
+    "bldg": "Building",
+    "mwc": "Main Work Center",
+    "mi": "MI",
+    "mm": "MM",
+    "desc": "Description"
+  }
+}
