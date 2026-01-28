@@ -1,0 +1,106 @@
+{
+  "name": "testing123",
+  "input_source": "local_eml",
+  "auto_detect_columns": false,
+  "index_column": "order",
+  "email_selection": {
+    "directory": "./input_emails",
+    "pattern": "*.eml",
+    "file_paths": [
+      "C:/Users/U1106812/Downloads/Re_ pressure gauge failed calibration on CS-741.eml",
+      "C:/Users/U1106812/Downloads/Re_ ETS MI Request - QE-1680861 CHR1027 PM Rubber Band Found.eml",
+      "C:/Users/U1106812/Downloads/RE_ Dec 2025 Exception Report - Open Work Order Verification - PMAUTO & PMBAS.eml"
+    ]
+  },
+  "schema": {
+    "columns": [
+      {
+        "name": "From",
+        "type": "mixed",
+        "extract_type": "mixed"
+      },
+      {
+        "name": "Sent",
+        "type": "mixed",
+        "extract_type": "mixed"
+      },
+      {
+        "name": "To",
+        "type": "mixed",
+        "extract_type": "mixed"
+      },
+      {
+        "name": "order",
+        "type": "number",
+        "extract_type": "number"
+      },
+      {
+        "name": "order type",
+        "type": "mixed",
+        "extract_type": "mixed"
+      },
+      {
+        "name": "main work center",
+        "type": "text",
+        "extract_type": "text"
+      },
+      {
+        "name": "Equipment",
+        "type": "mixed",
+        "extract_type": "mixed"
+      },
+      {
+        "name": "Description of technical object",
+        "type": "auto",
+        "extract_type": "auto"
+      },
+      {
+        "name": "bldg",
+        "type": "mixed",
+        "extract_type": "mixed"
+      },
+      {
+        "name": "initial Due Date",
+        "type": "date",
+        "extract_type": "date"
+      },
+      {
+        "name": "Basic finish date",
+        "type": "date",
+        "extract_type": "date"
+      },
+      {
+        "name": "Actual start date",
+        "type": "date",
+        "extract_type": "date"
+      },
+      {
+        "name": "user status",
+        "type": "auto",
+        "extract_type": "auto"
+      },
+      {
+        "name": "system status",
+        "type": "auto",
+        "extract_type": "auto"
+      },
+      {
+        "name": "qc",
+        "type": "auto",
+        "extract_type": "auto"
+      }
+    ]
+  },
+  "rules": [],
+  "output": {
+    "format": "excel",
+    "destination": "local",
+    "local_path": "./output",
+    "also_export_bi": false
+  },
+  "use_synonyms": true,
+  "ai_assist": false,
+  "ai_threshold": 0,
+  "created_by": "Humza.Muhammad@sanofi.com",
+  "created_at": "2026-01-28T15:26:39.566562"
+}

@@ -3,6 +3,7 @@ Table Extractor - Extract tables from email bodies (HTML and plain text).
 Finds the largest table and converts it to structured rows.
 """
 import re
+from collections import Counter
 from typing import Dict, List, Tuple, Optional
 from html.parser import HTMLParser
 
@@ -74,14 +75,118 @@ def extract_tables_from_html(html: str) -> List[List[List[str]]]:
         return []
 
 
+def extract_imperfect_table(lines: List[str], min_columns: int = 3) -> List[List[str]]:
+    """
+    Extract tables from imperfect formatting.
+    Handles:
+    - Inconsistent spacing
+    - Missing separators
+    - Mixed delimiters
+    - Wrapped text
+    """
+    table_rows = []
+    
+    # Strategy 1: Detect column boundaries by analyzing spacing patterns
+    # Find lines with consistent spacing patterns
+    spacing_patterns = []
+    for line in lines:
+        if not line.strip():
+            continue
+        
+        # Count spaces between words
+        words = line.split()
+        if len(words) < min_columns:
+            continue
+        
+        # Calculate spacing positions
+        positions = []
+        current_pos = 0
+        for word in words:
+            word_start = line.find(word, current_pos)
+            if word_start >= 0:
+                positions.append(word_start)
+                current_pos = word_start + len(word)
+        
+        # Check if spacing is consistent (columns aligned)
+        if len(positions) >= min_columns:
+            spacing_patterns.append((line, positions, words))
+    
+    if len(spacing_patterns) >= 2:
+        # Find most common column positions
+        all_positions = []
+        for _, positions, _ in spacing_patterns:
+            all_positions.extend(positions)
+        
+        # Cluster positions (columns should be at similar positions)
+        position_counts = Counter(all_positions)
+        
+        # Get most common column positions (within 3 chars tolerance)
+        common_positions = []
+        for pos, count in position_counts.most_common(15):
+            # Check if this position is close to an existing one
+            is_new = True
+            for existing_pos in common_positions:
+                if abs(pos - existing_pos) < 3:
+                    is_new = False
+                    break
+            if is_new:
+                common_positions.append(pos)
+        
+        common_positions.sort()
+        
+        # Extract columns based on common positions
+        for line, _, _ in spacing_patterns:
+            row = []
+            for i, pos in enumerate(common_positions):
+                if i + 1 < len(common_positions):
+                    end_pos = common_positions[i + 1]
+                    cell = line[pos:end_pos].strip()
+                else:
+                    cell = line[pos:].strip()
+                
+                if cell:
+                    row.append(cell)
+            
+            if len(row) >= min_columns:
+                table_rows.append(row)
+        
+        if table_rows:
+            return table_rows
+    
+    # Strategy 2: Look for label-value pairs that form table-like structure
+    label_value_rows = []
+    current_row = {}
+    
+    for line in lines:
+        # Look for "Label: Value" patterns
+        matches = re.findall(r'([A-Za-z][A-Za-z0-9\s]{2,30})\s*[:\-]\s*([^\n]+)', line)
+        if matches:
+            for label, value in matches:
+                current_row[label.strip()] = value.strip()
+        
+        # If we hit a blank line or new section, save row
+        if not line.strip() and current_row:
+            label_value_rows.append(list(current_row.values()))
+            current_row = {}
+    
+    if current_row:
+        label_value_rows.append(list(current_row.values()))
+    
+    if len(label_value_rows) >= 2:
+        return label_value_rows
+    
+    return []
+
+
 def extract_tables_from_text(text: str) -> List[List[List[str]]]:
     """
-    Extract tables from plain text using common delimiters.
+    Extract tables from plain text - IMPROVED for imperfect tables.
     Supports:
     - Pipe-delimited: | col1 | col2 | col3 |
     - Tab-delimited: col1\tcol2\tcol3
     - Comma-delimited (CSV-like): col1, col2, col3
     - Fixed-width columns (detected by alignment)
+    - Imperfect tables (inconsistent spacing, mixed formats)
     
     Returns:
         List of detected tables.
@@ -92,20 +197,23 @@ def extract_tables_from_text(text: str) -> List[List[List[str]]]:
     tables = []
     lines = text.splitlines()
     
-    # Strategy 1: Pipe-delimited tables
+    # Strategy 1: Perfect tables (existing logic)
     pipe_table = extract_pipe_table(lines)
     if pipe_table and len(pipe_table) >= 2:
         tables.append(pipe_table)
     
-    # Strategy 2: Tab-delimited tables
     tab_table = extract_tab_table(lines)
     if tab_table and len(tab_table) >= 2:
         tables.append(tab_table)
     
-    # Strategy 3: Detect consistent column patterns (multiple spaces)
     space_table = extract_space_aligned_table(lines)
     if space_table and len(space_table) >= 2:
         tables.append(space_table)
+    
+    # Strategy 2: Imperfect tables (NEW)
+    imperfect_table = extract_imperfect_table(lines)
+    if imperfect_table and len(imperfect_table) >= 2:
+        tables.append(imperfect_table)
     
     return tables
 

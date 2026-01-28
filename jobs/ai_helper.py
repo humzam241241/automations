@@ -50,3 +50,42 @@ class AIHelper:
         except Exception as exc:  # pragma: no cover
             logging.warning("AI helper request failed: %s", exc)
             return None
+    
+    def classify_value(self, value: str, column_name: str, context: str) -> Optional[str]:
+        """
+        Use AI to classify a value into the correct column type.
+        
+        Example: "4000390042" + context "Work Order" → returns "4000390042"
+        
+        Args:
+            value: The value to classify
+            column_name: Name of the column
+            context: Surrounding text context
+        
+        Returns:
+            Classified value or None
+        """
+        if not self.is_configured():
+            return None
+        
+        payload = {
+            "action": "classify_value",
+            "value": value,
+            "column": column_name,
+            "context": context[:1000],  # Limit context size
+        }
+        headers = {"Content-Type": "application/json"}
+        if self.api_key:
+            headers["Authorization"] = f"Bearer {self.api_key}"
+        
+        try:
+            response = requests.post(self.endpoint, headers=headers, json=payload, timeout=20)
+            response.raise_for_status()
+            data = response.json()
+            classified_value = data.get("value")
+            if classified_value and classified_value.strip():
+                return classified_value.strip()
+        except Exception as exc:
+            logging.warning("AI value classification failed: %s", exc)
+        
+        return None

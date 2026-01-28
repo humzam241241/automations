@@ -70,6 +70,15 @@ class ExecutionEngine:
         if not records:
             return {"status": "no_data", "message": "Pipeline produced no data"}
         
+        # 2.5: Learn patterns from extracted data
+        try:
+            from jobs.pattern_learner import PatternLearner
+            learner = PatternLearner()
+            schema_columns = profile.get("schema", {}).get("columns", [])
+            learner.analyze_records(records, schema_columns)
+        except Exception as e:
+            logging.warning(f"Pattern learning failed: {e}")
+        
         # 3. Convert records to headers + rows for output
         headers, rows = self._records_to_table(records, profile)
         

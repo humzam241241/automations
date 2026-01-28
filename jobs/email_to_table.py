@@ -2,13 +2,25 @@
 Core job: Extract emails into tabular data based on schema and rules.
 """
 import re
-from typing import Dict, List, Tuple
+from typing import Dict, List, Tuple, Optional
 
 # Import synonym resolver
 try:
     from .synonym_resolver import get_synonyms, columns_match, get_resolver
+    from .pattern_learner import PatternLearner
 except ImportError:
     from jobs.synonym_resolver import get_synonyms, columns_match, get_resolver
+    from jobs.pattern_learner import PatternLearner
+
+# Global pattern learner instance
+_pattern_learner = None
+
+def get_pattern_learner() -> PatternLearner:
+    """Get or create pattern learner instance."""
+    global _pattern_learner
+    if _pattern_learner is None:
+        _pattern_learner = PatternLearner()
+    return _pattern_learner
 
 
 # Confidence helpers -------------------------------------------------
@@ -321,9 +333,13 @@ def smart_search_column(email_data: Dict, column_name: str, extract_type: str = 
     """
     FULLY INTELLIGENT column extraction - works with ANY column name!
     
+    IMPROVED: Uses pattern learning and AI to be smarter about extraction.
+    
     Now supports:
     - SYNONYMS (optional)
     - Explicit type hints that bias the search
+    - Pattern learning (learns 4000# = WO, 3000# = Equipment, etc.)
+    - AI assistance (if API key available)
     - Confidence metadata for each match
 
     Returns:
@@ -332,6 +348,9 @@ def smart_search_column(email_data: Dict, column_name: str, extract_type: str = 
     def make_meta(source: str, confidence: int) -> Dict[str, int]:
         return {"source": source, "confidence": confidence}
 
+    # NEW: Use pattern learner to get hints
+    learner = get_pattern_learner()
+    
     # Check if we're focusing on a specific order number
     focus_order = email_data.get("_focus_order")
     
@@ -345,10 +364,25 @@ def smart_search_column(email_data: Dict, column_name: str, extract_type: str = 
     
     all_content = f"{subject}\n{body}\n{from_addr}\n{to_addr}\n{attachments}\n{attachment_text}"
     
+    # If we have table data, analyze it for patterns
+    excel_rows = email_data.get("excel_rows", [])
+    if excel_rows:
+        # Get pattern hint based on column name and sample values
+        sample_values = [str(row.get(column_name, "")) for row in excel_rows[:3] if row.get(column_name)]
+        if sample_values:
+            predicted_type = learner.predict_column_type(sample_values[0], column_name)
+            if predicted_type:
+                # Use learned pattern to improve extraction
+                pattern_hint = learner.get_pattern_hint(column_name, sample_values[0])
+                if pattern_hint:
+                    matches = re.findall(pattern_hint, all_content)
+                    if matches:
+                        return matches[0], make_meta("pattern_learned", 8)
+    
     # If focusing on specific order, extract context around it
     if focus_order:
-        # Find the order number in content and extract surrounding context (400 chars before/after)
-        pattern = rf'.{{0,400}}{re.escape(focus_order)}.{{0,400}}'
+        # Find the order number in content and extract surrounding context (200 chars before/after - narrower)
+        pattern = rf'.{{0,200}}{re.escape(focus_order)}.{{0,200}}'
         match = re.search(pattern, all_content, re.IGNORECASE)
         if match:
             all_content = match.group(0)  # Use only context around this order
@@ -519,6 +553,29 @@ def smart_search_column(email_data: Dict, column_name: str, extract_type: str = 
             if re.search(pattern, all_content_lower):
                 return "Yes", make_meta("smart_keyword", 3)
 
+    # NEW: If AI is available and extraction failed, try AI classification
+    if email_data.get("_use_ai"):
+        try:
+            from jobs.ai_helper import AIHelper
+            ai_helper = AIHelper()
+            if ai_helper.is_configured():
+                # Try to classify any found values using AI
+                # Extract a sample value from content
+                sample_patterns = [
+                    r'\b(\d{6,})\b',
+                    r'\b([A-Z]{2,}\d{3,})\b',
+                    r'\b(\d{6,}\s*[A-Z]{2,}\d*)\b',
+                ]
+                for pattern in sample_patterns:
+                    matches = re.findall(pattern, all_content)
+                    if matches:
+                        for match_val in matches[:1]:  # Try first match
+                            ai_result = ai_helper.classify_value(match_val, column_name, all_content[:1000])
+                            if ai_result:
+                                return ai_result, make_meta("ai_classified", 7)
+        except Exception as e:
+            pass  # AI not available or failed
+    
     return "", make_meta("smart_search", 0)
 
 
