@@ -160,6 +160,14 @@
                     <input type="hidden" id="columns" value="">
                     <input type="hidden" id="columnTypes" value="">
                     <input type="hidden" id="editingProfileName" value="">
+                    
+                    <div class="column-suggestion-toolbar">
+                        <button type="button" onclick="suggestColumnsFromEmails()" class="btn-secondary">🧠 Suggest columns from emails</button>
+                        <small>Propose headings based on your current selection.</small>
+                    </div>
+                    <div id="columnSuggestions" class="suggestion-panel">
+                        <p>Click “Suggest columns from emails” to discover recurring headings.</p>
+                    </div>
                 
                 <div id="columnHelp" class="help-box" style="display:none;">
                     <h4>🧠 Column Types Explained</h4>
@@ -222,6 +230,18 @@
                         Use Synonyms <small>(QC = Quality Criticality, WO = Work Order, etc.)</small>
                     </label>
                     <button type="button" onclick="openSynonymManager()" class="btn-link">⚙️ Manage Synonyms</button>
+                </div>
+                <div class="form-section ai-section">
+                    <label>
+                        <input type="checkbox" id="useAiAssist">
+                        Enable AI assistance for low-confidence columns
+                    </label>
+                    <div class="ai-settings">
+                        <label for="aiThreshold">Confidence threshold:</label>
+                        <input type="range" id="aiThreshold" min="1" max="9" value="4">
+                        <span id="aiThresholdLabel">4</span>
+                        <small>Only columns scoring below the threshold will be sent to the AI helper.</small>
+                    </div>
                 </div>
             </div>
 

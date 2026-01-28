@@ -11,6 +11,31 @@ except ImportError:
     from jobs.synonym_resolver import get_synonyms, columns_match, get_resolver
 
 
+# Confidence helpers -------------------------------------------------
+def _confidence(source: str, matched: bool = True) -> int:
+    """
+    Simple confidence scale (0-10):
+      direct              -> 10
+      standard_field      -> 9
+      rule                -> 8
+      synonym_direct      -> 7
+      smart_heading       -> 6
+      smart_fallback      -> 3
+      missing / no match  -> 0
+    """
+    if not matched:
+        return 0
+    scale = {
+        "direct": 10,
+        "standard_field": 9,
+        "rule": 8,
+        "synonym_direct": 7,
+        "smart_heading": 6,
+        "smart_fallback": 3,
+    }
+    return scale.get(source, 5)
+
+
 def normalize_text(text: str) -> str:
     """Normalize text for keyword matching."""
     return re.sub(r"\s+", " ", text or "").strip().lower()
@@ -26,6 +51,15 @@ def extract_snippet(text: str, match_pos: int, context: int = 30) -> str:
     if end < len(text):
         snippet = snippet + "..."
     return snippet.strip()
+
+
+def _ai_assist(email_data: Dict, column_name: str, extract_type: str) -> Tuple[str, Dict[str, int]]:
+    """
+    Placeholder for optional AI assistance. Currently returns no value but
+    preserves the shape for future integration with a real model/API.
+    """
+    # TODO: integrate with external AI provider if configured.
+    return "", {"source": "ai_assist", "confidence": 0}
 
 
 def get_search_content(email_data: Dict, search_in: List[str]) -> str:
@@ -165,6 +199,8 @@ def apply_keyword_rules_enhanced(
                 "matched_term": matched_term,
                 "search_in": search_in,
                 "snippet": snippet,
+                "confidence": _confidence("rule", matched),
+                "source": "rule",
             }
     
     return result, explanations
@@ -281,34 +317,22 @@ def _extract_number_only(column_name: str, content: str) -> str:
     return ""
 
 
-def smart_search_column(email_data: Dict, column_name: str, extract_type: str = "auto", use_synonyms: bool = True) -> str:
+def smart_search_column(email_data: Dict, column_name: str, extract_type: str = "auto", use_synonyms: bool = True) -> Tuple[str, Dict[str, int]]:
     """
     FULLY INTELLIGENT column extraction - works with ANY column name!
     
     Now supports:
-    - SYNONYMS: "QC" matches "Quality Criticality" (can be disabled)
-    - Explicit TYPE to prevent wrong extractions
-    - Row association: values on same line stay together
-    
-    Types:
-    - "number" → ONLY extract numbers, never return "Yes"
-    - "text" → Extract text values
-    - "date" → Extract dates
-    - "amount" → Extract currency
-    - "yesno" → Check keyword presence (Yes/No)
-    - "email_field" → Standard email field
-    - "auto" → Auto-detect from column name
-    
-    Args:
-        email_data: Email dict
-        column_name: ANY column name the user types
-        extract_type: The expected value type
-        use_synonyms: If True, use synonym matching
-    
+    - SYNONYMS (optional)
+    - Explicit type hints that bias the search
+    - Confidence metadata for each match
+
     Returns:
-        Extracted value based on type
+        (value, {"source": str, "confidence": int})
     """
-    # Get all content from email
+    def make_meta(source: str, confidence: int) -> Dict[str, int]:
+        return {"source": source, "confidence": confidence}
+
+    # Collect contextual text
     subject = str(email_data.get("subject", ""))
     body = str(email_data.get("body", ""))
     from_addr = str(email_data.get("from", ""))
@@ -318,33 +342,19 @@ def smart_search_column(email_data: Dict, column_name: str, extract_type: str = 
     
     all_content = f"{subject}\n{body}\n{from_addr}\n{to_addr}\n{attachments}\n{attachment_text}"
     all_content_lower = all_content.lower()
-    
     column_lower = column_name.lower().strip()
-    
-    # Get synonyms only if enabled
     column_synonyms = get_synonyms(column_name) if use_synonyms else [column_name]
-    
-    # ============================================================
-    # EXPLICIT TYPE HANDLING - User selected a specific type
-    # This prevents "Yes" being returned when expecting a number
-    # ============================================================
-    
+
+    # Type-specific extractors
     if extract_type == "number":
-        # USER WANTS NUMBERS ONLY - never return "Yes"
-        # Try column name and all synonyms
         for name in [column_name] + column_synonyms:
             result = _extract_number_only(name, all_content)
             if result:
-                return result
-        return ""
-    
-    elif extract_type == "mixed":
-        # USER WANTS MIXED ALPHANUMERIC - "4000390042 ZM03", "TORFER0048", "B89"
-        # This is for values like Order numbers, Equipment IDs, etc.
-        search_names = [column_name] + (column_synonyms if use_synonyms else [])
-        
-        for name in search_names:
-            # Try "ColumnName: value" pattern first
+                return result, make_meta("smart_number", 7)
+        return "", make_meta("smart_number", 0)
+
+    if extract_type == "mixed":
+        for name in [column_name] + (column_synonyms if use_synonyms else []):
             patterns = [
                 rf'{re.escape(name)}\s*[:\-=]\s*([A-Za-z0-9][\w\s\-]*)',
                 rf'{re.escape(name)}\t+([^\t\n]+)',
@@ -353,212 +363,151 @@ def smart_search_column(email_data: Dict, column_name: str, extract_type: str = 
                 try:
                     match = re.search(pattern, all_content, re.IGNORECASE)
                     if match:
-                        value = match.group(1).strip()
-                        # Clean up but keep alphanumeric + spaces
-                        value = re.sub(r'\s+', ' ', value).strip()
-                        if value and len(value) < 100:
-                            return value
+                        value = re.sub(r'\s+', ' ', match.group(1).strip())
+                        if value:
+                            return value, make_meta("smart_label_match", 7)
                 except re.error:
                     continue
-        
-        # Try to find alphanumeric patterns
         alphanumeric_patterns = [
-            r'\b(\d{6,}\s*[A-Z]{2,}\d*)\b',  # 4000390042 ZM03
-            r'\b([A-Z]{2,}\d{3,})\b',  # TORFER0048
-            r'\b([A-Z]\d{2,})\b',  # B89
+            r'\b(\d{6,}\s*[A-Z]{2,}\d*)\b',
+            r'\b([A-Z]{2,}\d{3,})\b',
+            r'\b([A-Z]\d{2,})\b',
         ]
         for pattern in alphanumeric_patterns:
             matches = re.findall(pattern, all_content)
             if matches:
-                return "; ".join(list(dict.fromkeys(matches))[:5])
-        
-        return ""
-    
-    elif extract_type == "date":
-        # USER WANTS DATES ONLY
+                unique = list(dict.fromkeys(matches))
+                return "; ".join(unique[:5]), make_meta("smart_alphanumeric", 6)
+        return "", make_meta("smart_alphanumeric", 0)
+
+    if extract_type == "date":
         email_date = email_data.get("date", "")
         if email_date:
-            return str(email_date)
-        date_pattern = r'\d{1,2}[/\-]\d{1,2}[/\-]\d{2,4}|\d{4}[/\-]\d{1,2}[/\-]\d{1,2}'
-        match = re.search(date_pattern, all_content)
-        return match.group() if match else ""
-    
-    elif extract_type == "time":
-        # USER WANTS TIME ONLY
-        # Look for time patterns: 10:30, 2:45 PM, 14:30:00, etc.
-        time_patterns = [
-            r'\b(\d{1,2}:\d{2}(?::\d{2})?\s*(?:AM|PM|am|pm)?)\b',  # 10:30 AM, 2:45pm, 14:30:00
-            r'\b(\d{1,2}\s*(?:AM|PM|am|pm))\b',  # 10 AM, 2pm
+            return str(email_date), make_meta("smart_date", 8)
+        pattern = r'\d{1,2}[/\-]\d{1,2}[/\-]\d{2,4}|\d{4}[/\-]\d{1,2}[/\-]\d{1,2}'
+        match = re.search(pattern, all_content)
+        return (match.group(), make_meta("smart_date", 7)) if match else ("", make_meta("smart_date", 0))
+
+    if extract_type == "time":
+        patterns = [
+            r'\b(\d{1,2}:\d{2}(?::\d{2})?\s*(?:AM|PM|am|pm)?)\b',
+            r'\b(\d{1,2}\s*(?:AM|PM|am|pm))\b',
         ]
-        for pattern in time_patterns:
+        for pattern in patterns:
             match = re.search(pattern, all_content)
             if match:
-                return match.group(1)
-        return ""
-    
-    elif extract_type == "amount":
-        # USER WANTS CURRENCY/AMOUNTS ONLY
+                return match.group(1), make_meta("smart_time", 6)
+        return "", make_meta("smart_time", 0)
+
+    if extract_type == "amount":
         amount_pattern = r'[\$€£]\s*[\d,]+\.?\d*|\d{1,3}(?:,\d{3})*(?:\.\d{2})?'
         match = re.search(amount_pattern, all_content)
-        return match.group() if match else ""
-    
-    elif extract_type == "yesno":
-        # USER WANTS YES/NO - check keyword presence
+        return (match.group(), make_meta("smart_amount", 7)) if match else ("", make_meta("smart_amount", 0))
+
+    if extract_type == "yesno":
         pattern = r'\b' + re.escape(column_lower) + r'\b'
-        return "Yes" if re.search(pattern, all_content_lower) else "No"
-    
-    elif extract_type == "text":
-        # USER WANTS TEXT - extract value after "Column: value" or from table
-        # Uses SYNONYMS: "QC" matches "Quality Criticality"
-        
-        # Build patterns for column name AND all its synonyms
-        search_names = [column_name] + column_synonyms
-        
-        for name in search_names:
+        return ("Yes", make_meta("smart_yesno", 5)) if re.search(pattern, all_content_lower) else ("No", make_meta("smart_yesno", 5))
+
+    if extract_type == "text":
+        candidates = [column_name] + (column_synonyms if use_synonyms else [])
+        for name in candidates:
             patterns = [
-                # Standard "Label: Value" format
                 rf'{re.escape(name)}\s*[:\-=]\s*([^\n\t]+)',
-                # Table format with tab separator
                 rf'{re.escape(name)}\t+([^\t\n]+)',
-                # Table format with multiple spaces
                 rf'{re.escape(name)}\s{{2,}}([^\s].*?)(?:\s{{2,}}|$)',
             ]
-            
             for pattern in patterns:
                 try:
                     match = re.search(pattern, all_content, re.IGNORECASE)
                     if match:
-                        value = match.group(1).strip()
-                        # Clean up extra whitespace but keep the value
-                        value = re.sub(r'\s+', ' ', value).strip()
-                        if 0 < len(value) < 200:
-                            return value
+                        value = re.sub(r'\s+', ' ', match.group(1).strip())
+                        if value:
+                            return value, make_meta("smart_label_text", 6)
                 except re.error:
                     continue
-        
-        return ""
-    
-    elif extract_type == "email_field":
-        # USER WANTS STANDARD EMAIL FIELD
-        field_map = {
-            'subject': subject, 'from': from_addr, 'sender': from_addr,
-            'to': to_addr, 'recipient': to_addr, 'date': email_data.get("date", ""),
-            'body': body, 'content': body, 'message': body,
-            'attachments': ", ".join(email_data.get("attachments", []))
-        }
-        for key, value in field_map.items():
-            if key in column_lower:
-                return str(value) if value else ""
-        return ""
-    
-    # ============================================================
-    # AUTO-DETECT MODE (default) - Smart detection from column name
-    # ============================================================
-    
+        return "", make_meta("smart_text", 0)
+
     number_indicators = ['#', 'number', 'no.', 'no', 'id', 'num', 'code', 'ref', 'reference']
     is_number_column = any(ind in column_lower for ind in number_indicators)
-    
-    # Also check if column is short uppercase (likely abbreviation like MI, QE, MM)
     column_stripped = re.sub(r'[#\s\.\-_]+', '', column_name)
     is_abbreviation = len(column_stripped) <= 5 and column_stripped.isupper()
-    
-    # If it looks like a number column, extract numbers (no "Yes" fallback)
     if is_number_column or is_abbreviation:
         result = _extract_number_only(column_name, all_content)
         if result:
-            return result
-        # Don't fall back to "Yes" for number columns!
-        return ""
-    
-    # Time columns (check first, before date)
+            return result, make_meta("smart_number", 7)
+        return "", make_meta("smart_number", 0)
+
     if any(kw in column_lower for kw in ['time', 'hour', 'clock', 'start time', 'end time', 'meeting time']):
-        time_patterns = [
+        patterns = [
             r'\b(\d{1,2}:\d{2}(?::\d{2})?\s*(?:AM|PM|am|pm)?)\b',
             r'\b(\d{1,2}\s*(?:AM|PM|am|pm))\b',
         ]
-        for pattern in time_patterns:
+        for pattern in patterns:
             match = re.search(pattern, all_content)
             if match:
-                return match.group(1)
-    
-    # Date columns
+                return match.group(1), make_meta("smart_time", 6)
+
     if any(kw in column_lower for kw in ['date', 'when', 'received', 'sent', 'due']):
         email_date = email_data.get("date", "")
         if email_date:
-            return str(email_date)
-        date_pattern = r'\d{1,2}[/\-]\d{1,2}[/\-]\d{2,4}|\d{4}[/\-]\d{1,2}[/\-]\d{1,2}'
-        match = re.search(date_pattern, all_content)
+            return str(email_date), make_meta("smart_date", 8)
+        pattern = r'\d{1,2}[/\-]\d{1,2}[/\-]\d{2,4}|\d{4}[/\-]\d{1,2}[/\-]\d{1,2}'
+        match = re.search(pattern, all_content)
         if match:
-            return match.group()
-    
-    # Amount/Money columns
+            return match.group(), make_meta("smart_date", 7)
+
     if any(kw in column_lower for kw in ['amount', 'total', 'price', 'cost', 'qty', 'quantity', 'dollar', 'payment']):
         amount_pattern = r'[\$€£]\s*[\d,]+\.?\d*|\d{1,3}(?:,\d{3})*(?:\.\d{2})?'
         match = re.search(amount_pattern, all_content)
         if match:
-            return match.group()
-    
-    # Priority columns
+            return match.group(), make_meta("smart_amount", 6)
+
     if any(kw in column_lower for kw in ['priority', 'urgent', 'importance']):
         if any(kw in all_content_lower for kw in ['urgent', 'asap', 'critical', 'high priority', 'important', 'immediately']):
-            return "High"
-        elif any(kw in all_content_lower for kw in ['low priority', 'fyi', 'when possible', 'no rush']):
-            return "Low"
-        return "Normal"
-    
-    # Status columns
+            return "High", make_meta("smart_priority", 6)
+        if any(kw in all_content_lower for kw in ['low priority', 'fyi', 'when possible', 'no rush']):
+            return "Low", make_meta("smart_priority", 6)
+        return "Normal", make_meta("smart_priority", 4)
+
     if any(kw in column_lower for kw in ['status', 'state']):
         if any(kw in all_content_lower for kw in ['complete', 'done', 'finished', 'resolved', 'closed', 'approved']):
-            return "Complete"
-        elif any(kw in all_content_lower for kw in ['pending', 'waiting', 'in progress', 'ongoing', 'review']):
-            return "Pending"
-        elif any(kw in all_content_lower for kw in ['open', 'new', 'unread', 'submitted']):
-            return "Open"
-        elif any(kw in all_content_lower for kw in ['reject', 'denied', 'cancel']):
-            return "Rejected"
-    
-    # ============================================================
-    # STEP 3: LOOK FOR "COLUMN_NAME: VALUE" PATTERNS
-    # ============================================================
-    
-    # Try exact column name match first
-    extract_pattern = rf'{re.escape(column_name)}\s*[:\-=]\s*([^\n,;]+)'
-    match = re.search(extract_pattern, all_content, re.IGNORECASE)
-    if match:
-        value = match.group(1).strip()
-        if 0 < len(value) < 100:
-            return value
-    
-    # Try variations (singular/plural, with/without spaces)
-    column_words = column_name.split()
-    if len(column_words) >= 1:
-        # Try first word
-        first_word = column_words[0]
+            return "Complete", make_meta("smart_status", 6)
+        if any(kw in all_content_lower for kw in ['pending', 'waiting', 'in progress', 'ongoing', 'review']):
+            return "Pending", make_meta("smart_status", 5)
+        if any(kw in all_content_lower for kw in ['open', 'new', 'unread', 'submitted']):
+            return "Open", make_meta("smart_status", 5)
+        if any(kw in all_content_lower for kw in ['reject', 'denied', 'cancel']):
+            return "Rejected", make_meta("smart_status", 5)
+
+    search_names = [column_name] + (column_synonyms if use_synonyms else [])
+    for name in search_names:
+        pattern = rf'{re.escape(name)}\s*[:\-=]\s*([^\n,;]+)'
+        match = re.search(pattern, all_content, re.IGNORECASE)
+        if match:
+            value = re.sub(r'\s+', ' ', match.group(1).strip())
+            if value:
+                return value, make_meta("smart_label_match", 5)
+
+    if ' ' in column_name:
+        first_word = column_name.split()[0]
         if len(first_word) >= 2:
             pattern = rf'{re.escape(first_word)}\s*[:\-=]\s*([^\n,;]+)'
             match = re.search(pattern, all_content, re.IGNORECASE)
             if match:
-                value = match.group(1).strip()
-                if 0 < len(value) < 100:
-                    return value
-    
-    # ============================================================
-    # STEP 4: KEYWORD EXISTENCE CHECK (Yes/No)
-    # ============================================================
-    
-    # Word boundary search for the column name
+                value = re.sub(r'\s+', ' ', match.group(1).strip())
+                if value:
+                    return value, make_meta("smart_label_match", 4)
+
     search_terms = [column_name]
-    # Also try individual words if column has multiple words
     if ' ' in column_name:
         search_terms.extend(column_name.split())
-    
     for term in search_terms:
         if len(term) >= 2:
             pattern = r'\b' + re.escape(term.lower()) + r'\b'
             if re.search(pattern, all_content_lower):
-                return "Yes"
-    
-    return ""  # Not found
+                return "Yes", make_meta("smart_keyword", 3)
+
+    return "", make_meta("smart_search", 0)
 
 
 def extract_prefix_numbers(prefix: str, content: str) -> str:
@@ -657,7 +606,9 @@ def email_to_record(
     schema: Dict,
     rules: List[Dict],
     explain: bool = False,
-    use_synonyms: bool = True
+    use_synonyms: bool = True,
+    use_ai: bool = False,
+    ai_threshold: int = 0
 ) -> Tuple[Dict[str, str], Dict]:
     """
     Convert email to record dict (NEW canonical format).
@@ -725,12 +676,16 @@ def email_to_record(
         if direct_value and str(direct_value).strip():
             record[col_name] = str(direct_value).strip()
             if explain:
+                exact_match = matched_key and matched_key.lower() == col_name.lower()
+                source_tag = "direct" if exact_match else "synonym_direct"
                 explanations[col_name] = {
                     "matched": True,
-                    "match_type": "direct_column",
-                    "matched_term": col_name,
+                    "match_type": source_tag,
+                    "matched_term": matched_key or col_name,
                     "search_in": ["data_row"],
                     "snippet": str(direct_value)[:50],
+                    "confidence": _confidence("direct" if exact_match else "synonym_direct"),
+                    "source": source_tag,
                 }
         
         # Priority 2: Standard email fields (Subject, From, To, Date, Body, etc.)
@@ -743,33 +698,52 @@ def email_to_record(
                     "matched_term": col_name,
                     "search_in": ["email_headers"],
                     "snippet": str(standard_fields[col_name])[:50],
+                    "confidence": 9,
+                    "source": "standard_field",
                 }
         
         # Priority 3: Explicit rule results
         elif col_name in rule_results and rule_results[col_name]:
             record[col_name] = rule_results[col_name]
+            if explain:
+                explanations[col_name] = {
+                    "matched": True,
+                    "match_type": "rule",
+                    "matched_term": col_name,
+                    "search_in": ["rules"],
+                    "snippet": str(rule_results[col_name])[:50],
+                    "confidence": _confidence("rule"),
+                    "source": "rule",
+                }
         
         # Priority 4: Smart search - use column name and TYPE for extraction
         else:
-            smart_value = smart_search_column(email_data, col_name, col_type, use_synonyms)
+            smart_value, smart_meta = smart_search_column(email_data, col_name, col_type, use_synonyms)
+            smart_conf = smart_meta.get("confidence", 0)
+            smart_source = smart_meta.get("source", "smart_search")
+            smart_matched = bool(smart_value)
+
+            # Optional AI assist if low confidence
+            if use_ai and ai_threshold and smart_conf < ai_threshold:
+                ai_value, ai_meta = _ai_assist(email_data, col_name, col_type)
+                if ai_value:
+                    smart_value = ai_value
+                    smart_conf = ai_meta.get("confidence", smart_conf)
+                    smart_source = ai_meta.get("source", "ai_assist")
+                    smart_matched = True
+
             record[col_name] = smart_value
             
-            if explain and smart_value:
+            if explain:
                 explanations[col_name] = {
-                    "matched": True,
-                    "match_type": "smart_search",
+                    "matched": smart_matched,
+                    "match_type": smart_source,
                     "matched_term": col_name,
                     "extract_type": col_type,
                     "search_in": ["all"],
-                    "snippet": f"Found '{col_name}' in email content",
-                }
-            elif explain:
-                explanations[col_name] = {
-                    "matched": False,
-                    "match_type": None,
-                    "matched_term": None,
-                    "search_in": ["all"],
-                    "snippet": None,
+                    "snippet": f"Found '{col_name}' in email content" if smart_matched else None,
+                    "confidence": smart_conf,
+                    "source": smart_source,
                 }
     
     return record, explanations

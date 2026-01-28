@@ -2,11 +2,25 @@
 
 let currentProfile = null;
 let currentUser = null;
+let columnSuggestionsData = [];
+
+function updateAiThresholdLabel() {
+    const slider = document.getElementById('aiThreshold');
+    const label = document.getElementById('aiThresholdLabel');
+    if (slider && label) {
+        label.textContent = slider.value;
+    }
+}
 
 // ===== INITIALIZATION =====
 
 document.addEventListener('DOMContentLoaded', () => {
     checkLogin();
+    const slider = document.getElementById('aiThreshold');
+    if (slider) {
+        slider.addEventListener('input', updateAiThresholdLabel);
+        updateAiThresholdLabel();
+    }
 });
 
 // ===== USER MANAGEMENT =====
@@ -332,6 +346,15 @@ function editProfile() {
     // Set synonyms toggle
     const useSynonyms = currentProfile.use_synonyms !== false;  // Default true
     document.getElementById('useSynonyms').checked = useSynonyms;
+    const aiAssistInput = document.getElementById('useAiAssist');
+    if (aiAssistInput) {
+        aiAssistInput.checked = currentProfile.ai_assist !== false;
+    }
+    const aiSlider = document.getElementById('aiThreshold');
+    if (aiSlider) {
+        aiSlider.value = currentProfile.ai_threshold || 4;
+        updateAiThresholdLabel();
+    }
     
     // Show modal
     document.getElementById('createProfileModal').style.display = 'flex';
@@ -358,6 +381,14 @@ async function runProfile() {
                 log(`📊 BI Dashboard: ${result.output.bi_dashboard.path}`, 'success');
                 log('Dashboard opened in browser!', 'info');
             }
+            if (result.explanations && result.explanations.length > 0) {
+                const first = result.explanations[0];
+                Object.entries(first).forEach(([column, meta]) => {
+                    const confidence = meta.confidence || 0;
+                    const source = meta.source || meta.match_type || 'unknown';
+                    log(`[Conf ${confidence}] ${column} (via ${source})`, 'info');
+                });
+            }
         } else {
             log(`✗ Failed: ${result.message}`, 'error');
         }
@@ -381,6 +412,13 @@ function showCreateProfile() {
     document.getElementById('autoDetect').checked = false;
     document.getElementById('outputType').value = 'excel';
     document.getElementById('useSynonyms').checked = true;  // Default to enabled
+    const aiAssistInput = document.getElementById('useAiAssist');
+    if (aiAssistInput) aiAssistInput.checked = false;
+    const aiSlider = document.getElementById('aiThreshold');
+    if (aiSlider) {
+        aiSlider.value = 4;
+        updateAiThresholdLabel();
+    }
     
     // Clear and reset the column builder
     clearColumns();
@@ -396,6 +434,11 @@ function closeCreateProfile() {
     document.getElementById('autoDetect').checked = false;
     document.getElementById('editingProfileName').value = '';
     clearColumns();
+    const aiSlider = document.getElementById('aiThreshold');
+    if (aiSlider) {
+        aiSlider.value = 4;
+        updateAiThresholdLabel();
+    }
 }
 
 function updateInputOptions() {
@@ -506,6 +549,91 @@ function addColumn() {
     nameInput.focus();
 }
 
+function addSuggestedColumn(name, type = 'mixed') {
+    if (profileColumns.some(c => c.name.toLowerCase() === name.toLowerCase())) {
+        alert(`Column "${name}" already added`);
+        return;
+    }
+
+    profileColumns.push({ name, type });
+    renderColumns();
+    updateHiddenInputs();
+}
+
+function renderColumnSuggestions(suggestions) {
+    columnSuggestionsData = suggestions || [];
+    const container = document.getElementById('columnSuggestions');
+    if (!container) return;
+
+    if (!suggestions || suggestions.length === 0) {
+        container.innerHTML = '<p style="color:#999; font-size:13px;">No suggestions available yet.</p>';
+        return;
+    }
+
+    container.innerHTML = suggestions.map(suggestion => {
+        const nameEscaped = escapeHtml(suggestion.name);
+        const example = escapeHtml(suggestion.example || 'Example not available');
+        const confidence = suggestion.confidence || 4;
+        const synonyms = (suggestion.synonyms || []).map(s => `<span>${escapeHtml(s)}</span>`).join('');
+        const buttonParams = JSON.stringify(suggestion.name);
+
+        return `
+            <div class="suggestion-item">
+                <div class="suggestion-header">
+                    <span class="suggestion-name">${nameEscaped}</span>
+                    <span class="suggestion-confidence">Confidence ${confidence}/10</span>
+                </div>
+                <div class="suggestion-body">
+                    ${example ? `<code>${example}</code>` : ''}
+                    <div class="suggestion-synonyms">
+                        ${synonyms}
+                    </div>
+                </div>
+                <button class="btn-add-column" onclick="addSuggestedColumn(${buttonParams}, 'mixed')">
+                    + Add Column
+                </button>
+            </div>
+        `;
+    }).join('');
+}
+
+async function suggestColumnsFromEmails() {
+    const inputSource = document.getElementById('inputSource').value;
+    const emailSelection = collectEmailSelection(inputSource);
+    if (!emailSelection || Object.keys(emailSelection).length === 0) {
+        alert('Please specify a file, folder, or folder name before suggesting columns.');
+        return;
+    }
+
+    try {
+        const response = await fetch('/api/suggest-columns', {
+            method: 'POST',
+            headers: {'Content-Type': 'application/json'},
+            body: JSON.stringify({
+                profile: {
+                    name: 'suggestion',
+                    input_source: inputSource,
+                    email_selection: emailSelection
+                }
+            })
+        });
+
+        const data = await response.json();
+        if (data.success) {
+            renderColumnSuggestions(data.suggestions);
+            if (data.suggestions && data.suggestions.length > 0) {
+                log(`AI suggested ${data.suggestions.length} columns`, 'info');
+            } else {
+                log('No suggestions returned from sample emails', 'info');
+            }
+        } else {
+            alert(`Suggestion failed: ${data.message}`);
+        }
+    } catch (error) {
+        console.error('Column suggestion failed:', error);
+        alert('Failed to suggest columns');
+    }
+}
 function removeColumn(index) {
     profileColumns.splice(index, 1);
     renderColumns();
@@ -642,6 +770,60 @@ async function detectColumns() {
     }
 }
 
+function collectEmailSelection(inputSource) {
+    if (inputSource === 'graph') {
+        const folderInput = document.getElementById('folderName');
+        return {
+            folder_name: folderInput ? folderInput.value : 'Inbox',
+            newest_n: 25
+        };
+    }
+
+    if (inputSource === 'local_eml') {
+        const dirInput = document.getElementById('emlDirectory');
+        const filesInput = document.getElementById('emlFiles');
+        let filePaths = [];
+        if (filesInput && filesInput.dataset.paths) {
+            try {
+                filePaths = JSON.parse(filesInput.dataset.paths);
+            } catch (e) {
+                if (filesInput.value) {
+                    filePaths = filesInput.value.split(';').map(p => p.trim()).filter(p => p);
+                }
+            }
+        }
+
+        return {
+            directory: dirInput ? dirInput.value : '',
+            pattern: '*.eml',
+            file_paths: filePaths
+        };
+    }
+
+    if (inputSource === 'excel_file' || inputSource === 'csv_file') {
+        const fileInput = document.getElementById('filePath');
+        let filePaths = [];
+        if (fileInput && fileInput.dataset.paths) {
+            try {
+                filePaths = JSON.parse(fileInput.dataset.paths);
+            } catch (e) {
+                if (fileInput.value) {
+                    filePaths = fileInput.value.split(';').map(p => p.trim()).filter(p => p);
+                }
+            }
+        } else if (fileInput && fileInput.value) {
+            filePaths = fileInput.value.split(';').map(p => p.trim()).filter(p => p);
+        }
+
+        return {
+            file_path: filePaths[0] || '',
+            file_paths: filePaths
+        };
+    }
+
+    return {};
+}
+
 async function saveProfile() {
     const name = document.getElementById('profileName').value.trim();
     const inputSource = document.getElementById('inputSource').value;
@@ -660,6 +842,10 @@ async function saveProfile() {
         return;
     }
     
+    const aiAssist = document.getElementById('useAiAssist').checked;
+    const aiThresholdInput = document.getElementById('aiThreshold');
+    const aiThreshold = aiThresholdInput ? parseInt(aiThresholdInput.value, 10) : 4;
+
     // Build schema columns with types
     const schemaColumns = profileColumns.map(col => ({
         name: col.name,
@@ -683,59 +869,12 @@ async function saveProfile() {
             local_path: './output',
             also_export_bi: outputType === 'both'
         },
-        use_synonyms: document.getElementById('useSynonyms').checked
+        use_synonyms: document.getElementById('useSynonyms').checked,
+        ai_assist: aiAssist,
+        ai_threshold: aiAssist ? aiThreshold : 0
     };
     
-    // Add input-specific options
-    if (inputSource === 'graph') {
-        const folderInput = document.getElementById('folderName');
-        profile.email_selection = {
-            folder_name: folderInput ? folderInput.value : 'Inbox',
-            newest_n: 25
-        };
-    } else if (inputSource === 'local_eml') {
-        const dirInput = document.getElementById('emlDirectory');
-        const filesInput = document.getElementById('emlFiles');
-        
-        // Check if specific files were selected
-        let filePaths = [];
-        if (filesInput && filesInput.dataset.paths) {
-            try {
-                filePaths = JSON.parse(filesInput.dataset.paths);
-            } catch (e) {
-                if (filesInput.value) {
-                    filePaths = filesInput.value.split(';').map(p => p.trim()).filter(p => p);
-                }
-            }
-        }
-        
-        profile.email_selection = {
-            directory: dirInput ? dirInput.value : '',
-            pattern: '*.eml',
-            file_paths: filePaths  // NEW: specific files selected
-        };
-    } else if (inputSource === 'excel_file' || inputSource === 'csv_file') {
-        const fileInput = document.getElementById('filePath');
-        
-        // Get multiple file paths
-        let filePaths = [];
-        if (fileInput && fileInput.dataset.paths) {
-            try {
-                filePaths = JSON.parse(fileInput.dataset.paths);
-            } catch (e) {
-                if (fileInput.value) {
-                    filePaths = fileInput.value.split(';').map(p => p.trim()).filter(p => p);
-                }
-            }
-        } else if (fileInput && fileInput.value) {
-            filePaths = fileInput.value.split(';').map(p => p.trim()).filter(p => p);
-        }
-        
-        profile.email_selection = {
-            file_path: filePaths[0] || '',  // Backward compat
-            file_paths: filePaths  // NEW: multiple files
-        };
-    }
+    profile.email_selection = collectEmailSelection(inputSource);
     
     try {
         // If editing and name changed, delete old profile first

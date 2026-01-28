@@ -4,7 +4,7 @@ Core execution engine - runs profiles with selected adapters.
 import logging
 from datetime import datetime
 from pathlib import Path
-from typing import Dict, List, Optional
+from typing import Dict, List, Optional, Tuple
 
 from adapters.csv_writer import CSVWriter
 from adapters.excel_writer import ExcelWriter
@@ -12,12 +12,13 @@ from adapters.graph_email import GraphEmailAdapter
 from adapters.local_email import LocalEmailAdapter
 from adapters.onedrive_storage import OneDriveAdapter
 from jobs.email_to_table import email_to_record
+from jobs.ai_helper import AIHelper
 
 
 class ExecutionEngine:
     """Execute profiles using configured adapters."""
     
-    def __init__(self, access_token: Optional[str] = None):
+    def __init__(self, access_token: Optional[str] = None, ai_helper: Optional[AIHelper] = None):
         """
         Initialize engine.
         
@@ -25,6 +26,7 @@ class ExecutionEngine:
             access_token: Microsoft Graph access token (required for Graph/OneDrive)
         """
         self.access_token = access_token
+        self.ai_helper = ai_helper or AIHelper()
     
     def run_profile(self, profile: Dict, explain: bool = False) -> Dict:
         """
@@ -108,24 +110,63 @@ class ExecutionEngine:
         emails: List[Dict],
         profile: Dict,
         explain: bool
-    ) -> tuple[List[Dict], List[Dict]]:
+    ) -> Tuple[List[Dict], List[Dict]]:
         """Execute email_to_table job."""
         schema = profile.get("schema", {})
         rules = profile.get("rules", [])
         use_synonyms = profile.get("use_synonyms", True)  # Default to True
+        use_ai_flag = profile.get("use_ai", profile.get("ai_assist", False))
+        ai_enabled = use_ai_flag and self.ai_helper and self.ai_helper.is_configured()
+        ai_threshold = profile.get("ai_threshold", 4)
         
         records = []
         explanations = []
         
         for email_data in emails:
             record, explanation = email_to_record(
-                email_data, schema, rules, explain, use_synonyms
+                email_data, schema, rules, explain, use_synonyms, use_ai_flag, ai_threshold
             )
+            if ai_enabled:
+                record, explanation = self._apply_ai_assist(
+                    record, explanation, email_data, ai_threshold
+                )
             records.append(record)
             if explain:
                 explanations.append(explanation)
         
         return records, explanations
+
+    def _apply_ai_assist(
+        self,
+        record: Dict[str, str],
+        explanation: Dict[str, Dict],
+        email_data: Dict,
+        threshold: int
+    ) -> Tuple[Dict[str, str], Dict[str, Dict]]:
+        if not self.ai_helper or not self.ai_helper.is_configured():
+            return record, explanation
+
+        for column, meta in explanation.items():
+            confidence = meta.get("confidence", 0)
+            if confidence >= threshold:
+                continue
+
+            suggestion = self.ai_helper.suggest(column, email_data)
+            if not suggestion or not suggestion.get("value"):
+                continue
+
+            new_value = suggestion["value"]
+            record[column] = new_value
+            explanation[column].update({
+                "matched": True,
+                "match_type": "ai_assist",
+                "search_in": ["ai_assist"],
+                "snippet": suggestion.get("snippet"),
+                "confidence": suggestion.get("confidence", 6),
+                "source": "ai_assist",
+            })
+
+        return record, explanation
     
     def _job_append_to_master(
         self,

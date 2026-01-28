@@ -14,7 +14,10 @@ import secrets
 
 from core.engine import ExecutionEngine
 from core.profile_loader import ProfileLoader
+from jobs.column_suggester import suggest_columns
 from run_wizard import acquire_graph_token, test_graph_capabilities
+from jobs.ai_helper import AIHelper
+from jobs.column_suggester import ColumnSuggester
 
 # Initialize Flask app
 app = Flask(__name__)
@@ -288,6 +291,50 @@ def reset_synonyms():
     except Exception as e:
         return jsonify({'success': False, 'message': str(e)}), 400
 
+@app.route('/api/ai-suggest', methods=['POST'])
+def ai_suggest():
+    """Return an AI suggestion for a low-confidence column."""
+    helper = AIHelper()
+    if not helper.is_configured():
+        return jsonify({'success': False, 'message': 'AI helper not configured'}), 503
+
+    data = request.json or {}
+    column = data.get('column')
+    email_data = data.get('email_data', {})
+
+    if not column:
+        return jsonify({'success': False, 'message': 'Column name is required'}), 400
+
+    suggestion = helper.suggest(column, email_data)
+    if not suggestion:
+        return jsonify({'success': False, 'message': 'No suggestion available'})
+
+    return jsonify({'success': True, 'suggestion': suggestion})
+
+@app.route('/api/suggest-columns', methods=['POST'])
+def suggest_columns():
+    """Suggest column names based on sample emails."""
+    data = request.json or {}
+    profile = data.get('profile')
+    if not profile:
+        return jsonify({'success': False, 'message': 'Profile data required'}), 400
+
+    try:
+        token = None
+        if profile.get('input_source') == 'graph':
+            token = acquire_graph_token()
+        engine = ExecutionEngine(access_token=token)
+        emails = engine._load_emails(profile)
+        if not emails:
+            return jsonify({'success': False, 'message': 'No emails were loaded for suggestions.'})
+
+        suggester = ColumnSuggester(emails, max_samples=25)
+        suggestions = suggester.suggest()
+        return jsonify({'success': True, 'suggestions': suggestions})
+    except Exception as e:
+        logging.error(f"Column suggestion failed: {e}")
+        return jsonify({'success': False, 'message': str(e)}), 400
+
 @app.route('/api/detect-columns', methods=['POST'])
 def detect_columns():
     """Auto-detect columns from file."""
@@ -312,6 +359,29 @@ def detect_columns():
         
         return jsonify({'success': True, 'columns': headers})
     except Exception as e:
+        return jsonify({'success': False, 'message': str(e)}), 400
+
+@app.route('/api/suggest-columns', methods=['POST'])
+def suggest_columns_api():
+    """
+    Suggest column names from a sample of emails based on the profile payload.
+    Expects a profile-like JSON with input_source and email_selection.
+    """
+    try:
+        payload = request.json or {}
+        profile = payload.get("profile", payload)  # allow both top-level and nested
+
+        # Create a lightweight engine to load sample emails
+        engine = ExecutionEngine()
+        emails = engine._load_emails(profile)
+
+        # Limit sample size
+        emails = emails[:50]
+
+        suggestions = suggest_columns(emails, top_n=15)
+        return jsonify({'success': True, 'suggestions': suggestions})
+    except Exception as e:
+        logging.error(f"Suggest columns failed: {e}")
         return jsonify({'success': False, 'message': str(e)}), 400
 
 @app.route('/api/open-file-dialog', methods=['POST'])
