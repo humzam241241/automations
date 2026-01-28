@@ -82,6 +82,7 @@
                         <div class="profile-details" id="profileDetails"></div>
                         <div class="action-buttons">
                             <button onclick="runProfile()" class="btn-success">▶ Run Profile</button>
+                            <button onclick="editProfile()" class="btn-primary">✏️ Edit</button>
                             <button onclick="deleteProfile()" class="btn-danger">🗑 Delete</button>
                         </div>
                     </div>
@@ -96,65 +97,68 @@
         </div>
     </div>
 
-    <!-- Create Profile Modal -->
+    <!-- Create/Edit Profile Modal -->
     <div id="createProfileModal" class="modal" style="display:none;">
-        <div class="modal-content modal-large">
+        <div class="modal-content modal-large modal-scrollable">
             <div class="modal-header">
-                <h2>✨ Create New Profile</h2>
+                <h2 id="profileModalTitle">✨ Create New Profile</h2>
                 <button onclick="closeCreateProfile()" class="btn-close">×</button>
             </div>
             
-            <div class="form-section">
-                <label>Profile Name *</label>
-                <input type="text" id="profileName" placeholder="e.g., Daily Reports">
-            </div>
-
-            <div class="form-section">
-                <label>Input Source *</label>
-                <select id="inputSource" onchange="updateInputOptions()">
-                    <option value="graph">📧 Microsoft Graph (Outlook)</option>
-                    <option value="local_eml">📁 Local .eml Files</option>
-                    <option value="excel_file">📊 Excel File (.xlsx)</option>
-                    <option value="csv_file">📄 CSV File</option>
-                </select>
-            </div>
-
-            <div id="inputOptions" class="form-section">
-                <!-- Dynamic input options -->
-            </div>
-
-            <div class="form-section">
-                <label>
-                    <input type="checkbox" id="autoDetect" onchange="toggleAutoDetect()">
-                    Auto-detect columns from file
-                </label>
-            </div>
-
-            <div class="form-section" id="columnsSection">
-                <label>Columns * <span class="help-toggle" onclick="toggleColumnHelp()">ℹ️ Help</span></label>
-                
-                <div id="columnBuilder" class="column-builder">
-                    <div id="columnList" class="column-list">
-                        <!-- Columns will be added here -->
-                    </div>
-                    <div class="add-column-row">
-                        <input type="text" id="newColumnName" placeholder="Column name (e.g., MI #, Work Order)" class="column-name-input">
-                        <select id="newColumnType" class="column-type-select">
-                            <option value="auto">🤖 Auto-detect</option>
-                            <option value="number">🔢 Number/ID</option>
-                            <option value="text">📝 Text</option>
-                            <option value="date">📅 Date</option>
-                            <option value="amount">💰 Amount ($)</option>
-                            <option value="yesno">✅ Yes/No</option>
-                            <option value="email_field">📧 Email Field</option>
-                        </select>
-                        <button type="button" onclick="addColumn()" class="btn-add-column">+ Add</button>
-                    </div>
+            <div class="modal-body">
+                <div class="form-section">
+                    <label>Profile Name *</label>
+                    <input type="text" id="profileName" placeholder="e.g., Daily Reports">
                 </div>
-                
-                <!-- Hidden input for backward compatibility -->
-                <input type="hidden" id="columns" value="">
-                <input type="hidden" id="columnTypes" value="">
+
+                <div class="form-section">
+                    <label>Input Source *</label>
+                    <select id="inputSource" onchange="updateInputOptions()">
+                        <option value="graph">📧 Microsoft Graph (Outlook)</option>
+                        <option value="local_eml">📁 Local .eml Files</option>
+                        <option value="excel_file">📊 Excel File (.xlsx)</option>
+                        <option value="csv_file">📄 CSV File</option>
+                    </select>
+                </div>
+
+                <div id="inputOptions" class="form-section">
+                    <!-- Dynamic input options -->
+                </div>
+
+                <div class="form-section">
+                    <label>
+                        <input type="checkbox" id="autoDetect" onchange="toggleAutoDetect()">
+                        Auto-detect columns from file
+                    </label>
+                </div>
+
+                <div class="form-section" id="columnsSection">
+                    <label>Columns * <span class="help-toggle" onclick="toggleColumnHelp()">ℹ️ Help</span></label>
+                    
+                    <div id="columnBuilder" class="column-builder">
+                        <div id="columnList" class="column-list">
+                            <!-- Columns will be added here -->
+                        </div>
+                        <div class="add-column-row">
+                            <input type="text" id="newColumnName" placeholder="Enter column name..." class="column-name-input">
+                            <select id="newColumnType" class="column-type-select">
+                                <option value="auto">🤖 Auto-detect</option>
+                                <option value="number">🔢 Number/ID</option>
+                                <option value="text">📝 Text</option>
+                                <option value="date">📅 Date</option>
+                                <option value="time">🕐 Time</option>
+                                <option value="amount">💰 Amount ($)</option>
+                                <option value="yesno">✅ Yes/No</option>
+                                <option value="email_field">📧 Email Field</option>
+                            </select>
+                            <button type="button" onclick="addColumn()" class="btn-add-column">+ Add</button>
+                        </div>
+                    </div>
+                    
+                    <!-- Hidden input for backward compatibility -->
+                    <input type="hidden" id="columns" value="">
+                    <input type="hidden" id="columnTypes" value="">
+                    <input type="hidden" id="editingProfileName" value="">
                 
                 <div id="columnHelp" class="help-box" style="display:none;">
                     <h4>🧠 Column Types Explained</h4>
@@ -199,21 +203,22 @@
                     </div>
                     <p class="help-note">💡 <strong>🤖 Auto-detect</strong> guesses the type from the column name. Use specific types to get exact results!</p>
                 </div>
-            </div>
+                </div>
 
-            <div class="form-section">
-                <label>Output</label>
-                <select id="outputType">
-                    <option value="excel">📄 Excel File</option>
-                    <option value="bi_dashboard">📊 BI Dashboard</option>
-                    <option value="both">📄+📊 Excel + BI Dashboard</option>
-                </select>
-                <small id="outputHint" class="hint">Smart default based on input type</small>
+                <div class="form-section">
+                    <label>Output</label>
+                    <select id="outputType">
+                        <option value="excel">📄 Excel File</option>
+                        <option value="bi_dashboard">📊 BI Dashboard</option>
+                        <option value="both">📄+📊 Excel + BI Dashboard</option>
+                    </select>
+                    <small id="outputHint" class="hint">Smart default based on input type</small>
+                </div>
             </div>
 
             <div class="modal-footer">
                 <button onclick="closeCreateProfile()" class="btn-secondary">Cancel</button>
-                <button onclick="saveProfile()" class="btn-primary">Create Profile</button>
+                <button onclick="saveProfile()" class="btn-primary" id="saveProfileBtn">Create Profile</button>
             </div>
         </div>
     </div>

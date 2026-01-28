@@ -270,6 +270,69 @@ async function deleteProfile() {
     }
 }
 
+function editProfile() {
+    if (!currentProfile) return;
+    
+    // Set modal to edit mode
+    document.getElementById('profileModalTitle').textContent = '✏️ Edit Profile';
+    document.getElementById('saveProfileBtn').textContent = 'Save Changes';
+    document.getElementById('editingProfileName').value = currentProfile.name;
+    
+    // Populate form with current profile data
+    document.getElementById('profileName').value = currentProfile.name;
+    document.getElementById('inputSource').value = currentProfile.input_source || 'graph';
+    
+    // Trigger input options update
+    updateInputOptions();
+    
+    // Fill in input-specific fields after a short delay
+    setTimeout(() => {
+        if (currentProfile.email_selection) {
+            if (currentProfile.input_source === 'graph') {
+                const folderInput = document.getElementById('folderName');
+                if (folderInput) folderInput.value = currentProfile.email_selection.folder_name || 'Inbox';
+            } else if (currentProfile.input_source === 'local_eml') {
+                const dirInput = document.getElementById('emlDirectory');
+                if (dirInput) dirInput.value = currentProfile.email_selection.directory || '';
+            } else if (currentProfile.input_source === 'excel_file' || currentProfile.input_source === 'csv_file') {
+                const fileInput = document.getElementById('filePath');
+                if (fileInput) fileInput.value = currentProfile.email_selection.file_path || '';
+            }
+        }
+    }, 100);
+    
+    // Load columns with types
+    profileColumns = [];
+    if (currentProfile.schema && currentProfile.schema.columns) {
+        currentProfile.schema.columns.forEach(col => {
+            profileColumns.push({
+                name: col.name || col.header || '',
+                type: col.extract_type || col.type || 'auto'
+            });
+        });
+    }
+    renderColumns();
+    updateHiddenInputs();
+    
+    // Set auto-detect
+    document.getElementById('autoDetect').checked = currentProfile.auto_detect_columns || false;
+    toggleAutoDetect();
+    
+    // Set output type
+    if (currentProfile.output) {
+        if (currentProfile.output.also_export_bi) {
+            document.getElementById('outputType').value = 'both';
+        } else if (currentProfile.output.destination === 'bi_dashboard') {
+            document.getElementById('outputType').value = 'bi_dashboard';
+        } else {
+            document.getElementById('outputType').value = 'excel';
+        }
+    }
+    
+    // Show modal
+    document.getElementById('createProfileModal').style.display = 'flex';
+}
+
 async function runProfile() {
     if (!currentProfile) return;
     
@@ -303,10 +366,22 @@ async function runProfile() {
 // ===== CREATE PROFILE =====
 
 function showCreateProfile() {
-    document.getElementById('createProfileModal').style.display = 'flex';
+    // Reset to create mode
+    document.getElementById('profileModalTitle').textContent = '✨ Create New Profile';
+    document.getElementById('saveProfileBtn').textContent = 'Create Profile';
+    document.getElementById('editingProfileName').value = '';
+    
+    // Reset form
+    document.getElementById('profileName').value = '';
+    document.getElementById('inputSource').value = 'graph';
+    document.getElementById('autoDetect').checked = false;
+    document.getElementById('outputType').value = 'excel';
+    
     // Clear and reset the column builder
     clearColumns();
     updateInputOptions();
+    
+    document.getElementById('createProfileModal').style.display = 'flex';
 }
 
 function closeCreateProfile() {
@@ -314,6 +389,7 @@ function closeCreateProfile() {
     // Reset form
     document.getElementById('profileName').value = '';
     document.getElementById('autoDetect').checked = false;
+    document.getElementById('editingProfileName').value = '';
     clearColumns();
 }
 
@@ -437,6 +513,7 @@ function renderColumns() {
         'number': '🔢 Number',
         'text': '📝 Text',
         'date': '📅 Date',
+        'time': '🕐 Time',
         'amount': '💰 Amount',
         'yesno': '✅ Yes/No',
         'email_field': '📧 Email'
@@ -557,6 +634,8 @@ async function saveProfile() {
     const inputSource = document.getElementById('inputSource').value;
     const outputType = document.getElementById('outputType').value;
     const autoDetect = document.getElementById('autoDetect').checked;
+    const editingName = document.getElementById('editingProfileName').value;
+    const isEditing = editingName !== '';
     
     if (!name) {
         alert('Profile name is required');
@@ -595,22 +674,30 @@ async function saveProfile() {
     
     // Add input-specific options
     if (inputSource === 'graph') {
+        const folderInput = document.getElementById('folderName');
         profile.email_selection = {
-            folder_name: document.getElementById('folderName').value,
+            folder_name: folderInput ? folderInput.value : 'Inbox',
             newest_n: 25
         };
     } else if (inputSource === 'local_eml') {
+        const dirInput = document.getElementById('emlDirectory');
         profile.email_selection = {
-            directory: document.getElementById('emlDirectory').value,
+            directory: dirInput ? dirInput.value : '',
             pattern: '*.eml'
         };
     } else if (inputSource === 'excel_file' || inputSource === 'csv_file') {
+        const fileInput = document.getElementById('filePath');
         profile.email_selection = {
-            file_path: document.getElementById('filePath').value
+            file_path: fileInput ? fileInput.value : ''
         };
     }
     
     try {
+        // If editing and name changed, delete old profile first
+        if (isEditing && editingName !== name) {
+            await fetch(`/api/profiles/${editingName}`, { method: 'DELETE' });
+        }
+        
         const response = await fetch('/api/profiles', {
             method: 'POST',
             headers: {'Content-Type': 'application/json'},
@@ -620,15 +707,20 @@ async function saveProfile() {
         const data = await response.json();
         
         if (data.success) {
-            log(`✓ Created: ${name}`, 'success');
+            log(`✓ ${isEditing ? 'Updated' : 'Created'}: ${name}`, 'success');
             closeCreateProfile();
             await loadProfiles();
+            
+            // If we were editing, update current profile
+            if (isEditing) {
+                currentProfile = profile;
+            }
         } else {
-            alert(`Failed to create profile: ${data.message}`);
+            alert(`Failed to ${isEditing ? 'update' : 'create'} profile: ${data.message}`);
         }
     } catch (error) {
         console.error('Save failed:', error);
-        alert('Failed to create profile');
+        alert(`Failed to ${isEditing ? 'update' : 'create'} profile`);
     }
 }
 

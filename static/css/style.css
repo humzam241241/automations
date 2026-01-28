@@ -64,7 +64,21 @@ body {
 }
 
 .modal-large {
-    max-width: 600px;
+    max-width: 650px;
+    width: 95%;
+}
+
+.modal-scrollable {
+    max-height: 90vh;
+    display: flex;
+    flex-direction: column;
+}
+
+.modal-scrollable .modal-body {
+    flex: 1;
+    overflow-y: auto;
+    padding-right: 10px;
+    max-height: calc(90vh - 140px);
 }
 
 .modal-header {
@@ -72,6 +86,14 @@ body {
     justify-content: space-between;
     align-items: center;
     margin-bottom: 20px;
+    flex-shrink: 0;
+}
+
+.modal-footer {
+    flex-shrink: 0;
+    padding-top: 15px;
+    border-top: 1px solid var(--gray-200);
+    margin-top: 15px;
 }
 
 .modal-footer {
@@ -855,33 +877,43 @@ button {
 }
 
 .add-column-row {
-    display: flex;
-    gap: 8px;
+    display: grid;
+    grid-template-columns: 1fr auto auto;
+    gap: 10px;
     align-items: center;
+    padding-top: 8px;
+    border-top: 1px dashed var(--gray-200);
 }
 
 .column-name-input {
-    flex: 1;
-    padding: 10px 14px;
-    border: 1px solid var(--gray-200);
+    width: 100%;
+    padding: 12px 14px;
+    border: 2px solid var(--gray-200);
     border-radius: 8px;
     font-size: 14px;
+    background: white;
+}
+
+.column-name-input::placeholder {
+    color: #999;
+    font-style: italic;
 }
 
 .column-name-input:focus {
     outline: none;
     border-color: var(--primary);
-    box-shadow: 0 0 0 3px rgba(102, 126, 234, 0.1);
+    box-shadow: 0 0 0 3px rgba(102, 126, 234, 0.15);
 }
 
 .column-type-select {
-    padding: 10px 14px;
-    border: 1px solid var(--gray-200);
+    padding: 12px 14px;
+    border: 2px solid var(--gray-200);
     border-radius: 8px;
     font-size: 14px;
     background: white;
     cursor: pointer;
-    min-width: 150px;
+    min-width: 160px;
+    font-weight: 500;
 }
 
 .column-type-select:focus {
@@ -893,7 +925,7 @@ button {
     background: var(--primary);
     color: white;
     border: none;
-    padding: 10px 16px;
+    padding: 12px 20px;
     border-radius: 8px;
     font-weight: 600;
     cursor: pointer;
@@ -904,4 +936,14 @@ button {
 .btn-add-column:hover {
     background: var(--primary-dark);
     transform: translateY(-1px);
+}
+
+/* Time type color */
+.column-tag[data-type="time"] {
+    border-color: #4299e1;
+    background: linear-gradient(135deg, #ebf8ff 0%, #fff 100%);
+}
+.column-tag[data-type="time"] .column-tag-type {
+    background: #4299e1;
+    color: white;
 }

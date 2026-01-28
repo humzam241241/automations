@@ -299,6 +299,19 @@ def smart_search_column(email_data: Dict, column_name: str, extract_type: str = 
         match = re.search(date_pattern, all_content)
         return match.group() if match else ""
     
+    elif extract_type == "time":
+        # USER WANTS TIME ONLY
+        # Look for time patterns: 10:30, 2:45 PM, 14:30:00, etc.
+        time_patterns = [
+            r'\b(\d{1,2}:\d{2}(?::\d{2})?\s*(?:AM|PM|am|pm)?)\b',  # 10:30 AM, 2:45pm, 14:30:00
+            r'\b(\d{1,2}\s*(?:AM|PM|am|pm))\b',  # 10 AM, 2pm
+        ]
+        for pattern in time_patterns:
+            match = re.search(pattern, all_content)
+            if match:
+                return match.group(1)
+        return ""
+    
     elif extract_type == "amount":
         # USER WANTS CURRENCY/AMOUNTS ONLY
         amount_pattern = r'[\$€£]\s*[\d,]+\.?\d*|\d{1,3}(?:,\d{3})*(?:\.\d{2})?'
@@ -352,8 +365,19 @@ def smart_search_column(email_data: Dict, column_name: str, extract_type: str = 
         # Don't fall back to "Yes" for number columns!
         return ""
     
+    # Time columns (check first, before date)
+    if any(kw in column_lower for kw in ['time', 'hour', 'clock', 'start time', 'end time', 'meeting time']):
+        time_patterns = [
+            r'\b(\d{1,2}:\d{2}(?::\d{2})?\s*(?:AM|PM|am|pm)?)\b',
+            r'\b(\d{1,2}\s*(?:AM|PM|am|pm))\b',
+        ]
+        for pattern in time_patterns:
+            match = re.search(pattern, all_content)
+            if match:
+                return match.group(1)
+    
     # Date columns
-    if any(kw in column_lower for kw in ['date', 'time', 'when', 'received', 'sent', 'due']):
+    if any(kw in column_lower for kw in ['date', 'when', 'received', 'sent', 'due']):
         email_date = email_data.get("date", "")
         if email_date:
             return str(email_date)

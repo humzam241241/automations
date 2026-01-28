@@ -9,40 +9,54 @@
   "schema": {
     "columns": [
       {
-        "name": "Work order #",
-        "type": "text"
+        "name": "MI",
+        "type": "number",
+        "extract_type": "number"
       },
       {
-        "name": "EQQ #",
-        "type": "text"
+        "name": "EQQ",
+        "type": "number",
+        "extract_type": "number"
       },
       {
-        "name": "SAP ID #",
-        "type": "text"
+        "name": "room",
+        "type": "number",
+        "extract_type": "number"
       },
       {
-        "name": "Room #",
-        "type": "text"
+        "name": "bldg",
+        "type": "number",
+        "extract_type": "number"
       },
       {
-        "name": "Bldg #",
-        "type": "text"
-      },
-      {
-        "name": "System #",
-        "type": "text"
-      },
-      {
-        "name": "subject",
-        "type": "text"
+        "name": "system",
+        "type": "number",
+        "extract_type": "number"
       },
       {
         "name": "date",
-        "type": "text"
+        "type": "date",
+        "extract_type": "date"
       },
       {
         "name": "time",
-        "type": "text"
+        "type": "date",
+        "extract_type": "date"
+      },
+      {
+        "name": "email",
+        "type": "email_field",
+        "extract_type": "email_field"
+      },
+      {
+        "name": "subject",
+        "type": "auto",
+        "extract_type": "auto"
+      },
+      {
+        "name": "wrok order",
+        "type": "number",
+        "extract_type": "number"
       }
     ]
   },
@@ -54,5 +68,5 @@
     "also_export_bi": false
   },
   "created_by": "Humza.Muhammad@sanofi.com",
-  "created_at": "2026-01-28T11:49:33.465932"
+  "created_at": "2026-01-28T12:12:55.174003"
 }
