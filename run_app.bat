@@ -1,23 +1,24 @@
 @echo off
 setlocal EnableExtensions EnableDelayedExpansion
 cd /d "%~dp0"
-title Email Monitor - Outlook to OneDrive
+title Email to Spreadsheet Wizard
 color 0A
 
 cls
 echo ==============================================
-echo        EMAIL MONITOR - OUTLOOK TO ONEDRIVE
+echo     EMAIL TO SPREADSHEET FRAMEWORK
 echo ==============================================
 echo.
-echo This tool will:
-echo  - Ask for folder/path/keywords
-echo  - Scan the Outlook folder
-echo  - Upload CSV reports to OneDrive
+echo This wizard will help you:
+echo  - Create reusable email processing profiles
+echo  - Fetch emails from Outlook OR local files
+echo  - Apply keyword/regex rules to extract data
+echo  - Output to Excel/CSV (local or OneDrive)
 echo.
 echo ----------------------------------------------
 echo 1) Installing dependencies
 echo ----------------------------------------------
-python -m pip install -r requirements.txt
+python -m pip install -r requirements.txt >nul 2>&1
 if errorlevel 1 (
   echo.
   echo ERROR: Dependency installation failed.
@@ -25,56 +26,40 @@ if errorlevel 1 (
   pause
   exit /b 1
 )
+echo ✓ Dependencies installed
 
 echo.
 echo ----------------------------------------------
-echo 2) Configuration (folders, keywords)
+echo 2) Checking Graph API configuration
 echo ----------------------------------------------
-set "ONEDRIVE_FOLDER="
-set "TEMPLATE_PATH="
-
-:promptOnedrive
-set "input="
-set /p input=OneDrive folder path (e.g. /EmailReports) [leave blank to keep]: 
-if "!input!"=="" goto promptTemplate
-if not "!input:~0,1!"=="/" (
-  echo Invalid OneDrive path. Use format like /EmailReports or /Folder/SubFolder.
-  goto promptOnedrive
-)
-set "ONEDRIVE_FOLDER=!input!"
-
-:promptTemplate
-set "input="
-set /p input=Template Excel path (optional .xlsx) [leave blank to skip]: 
-if "!input!"=="" goto runSetup
-if not exist "!input!" (
-  echo Invalid path. File not found.
-  goto promptTemplate
-)
-for %%F in ("!input!") do set "ext=%%~xF"
-if /I not "!ext!"==".xlsx" (
-  echo Invalid file type. Please select a .xlsx file.
-  goto promptTemplate
-)
-set "TEMPLATE_PATH=!input!"
-
-:runSetup
-python setup_keywords.py
-if errorlevel 1 (
+if not defined CLIENT_ID (
   echo.
-  echo ERROR: Configuration failed.
-  pause
-  exit /b 1
+  echo ⚠ CLIENT_ID environment variable not set
+  echo   Graph mode will be unavailable.
+  echo   You can still use local .eml files as input.
+  echo.
+) else (
+  echo ✓ CLIENT_ID configured
+)
+
+if not defined AUTHORITY (
+  echo.
+  echo ⚠ AUTHORITY environment variable not set
+  echo   Graph mode will be unavailable.
+  echo.
+) else (
+  echo ✓ AUTHORITY configured
 )
 
 echo.
 echo ----------------------------------------------
-echo 3) Running email processor
+echo 3) Launching Interactive Wizard
 echo ----------------------------------------------
-python main.py
+echo.
+python run_wizard.py
 if errorlevel 1 (
   echo.
-  echo ERROR: App exited with an error.
+  echo ERROR: Wizard exited with an error.
 )
 
 echo.

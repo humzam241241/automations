@@ -4,11 +4,13 @@ Detects Graph availability and offers local fallback.
 """
 import json
 import logging
+import os
 import sys
 from pathlib import Path
-from typing import Optional
+from typing import Optional, Dict
 
 import msal
+import requests
 
 from core.engine import ExecutionEngine
 from core.profile_loader import ProfileLoader
@@ -23,36 +25,86 @@ def setup_logging():
     )
 
 
-def test_graph_access(token: str) -> bool:
-    """Test if Graph API is accessible."""
-    import requests
+def get_token_cache_path() -> Path:
+    """Get user-specific token cache path."""
+    if os.name == "nt":  # Windows
+        base = Path(os.getenv("LOCALAPPDATA", os.path.expanduser("~")))
+    else:  # Unix-like
+        base = Path(os.path.expanduser("~/.local/share"))
     
+    cache_dir = base / "EmailAutomations"
+    cache_dir.mkdir(parents=True, exist_ok=True)
+    return cache_dir / "token_cache.bin"
+
+
+def test_graph_capabilities(token: str) -> Dict[str, bool]:
+    """Test specific Graph API capabilities."""
+    capabilities = {
+        "me": False,
+        "mail": False,
+        "drive": False,
+    }
+    
+    headers = {"Authorization": f"Bearer {token}"}
+    
+    # Test /me
     try:
         response = requests.get(
             "https://graph.microsoft.com/v1.0/me",
-            headers={"Authorization": f"Bearer {token}"},
+            headers=headers,
             timeout=10,
         )
-        return response.status_code == 200
+        capabilities["me"] = response.status_code == 200
     except Exception:
-        return False
+        pass
+    
+    # Test mail access
+    try:
+        response = requests.get(
+            "https://graph.microsoft.com/v1.0/me/mailFolders",
+            headers=headers,
+            timeout=10,
+        )
+        capabilities["mail"] = response.status_code == 200
+    except Exception:
+        pass
+    
+    # Test drive access
+    try:
+        response = requests.get(
+            "https://graph.microsoft.com/v1.0/me/drive/root",
+            headers=headers,
+            timeout=10,
+        )
+        capabilities["drive"] = response.status_code == 200
+    except Exception:
+        pass
+    
+    return capabilities
 
 
 def acquire_graph_token() -> Optional[str]:
     """Attempt to acquire Graph token via device code flow."""
-    import os
+    client_id = os.getenv("CLIENT_ID")
+    authority_url = os.getenv("AUTHORITY")
     
-    client_id = os.getenv("CLIENT_ID", "d3590ed6-52b3-4102-aeff-aad2292ab01c")
-    authority = os.getenv("AUTHORITY", "https://login.microsoftonline.com/aca3c8d6-aa71-4e1a-a10e-03572fc58c0b")
+    if not client_id or not authority_url:
+        print("\n" + "="*60)
+        print("MICROSOFT GRAPH AUTHENTICATION UNAVAILABLE")
+        print("="*60)
+        print("Missing environment variables: CLIENT_ID and/or AUTHORITY")
+        print("Graph mode is disabled. You can only use local file inputs/outputs.")
+        print("="*60)
+        return None
     
-    cache_path = Path("token_cache.bin")
+    cache_path = get_token_cache_path()
     cache = msal.SerializableTokenCache()
     if cache_path.exists():
         cache.deserialize(cache_path.read_text(encoding="utf-8"))
     
     app = msal.PublicClientApplication(
         client_id=client_id,
-        authority=authority,
+        authority=authority_url,
         token_cache=cache,
     )
     
@@ -69,7 +121,7 @@ def acquire_graph_token() -> Optional[str]:
     
     # Device code flow
     print("\n" + "="*60)
-    print("ATTEMPTING MICROSOFT GRAPH AUTHENTICATION")
+    print("MICROSOFT GRAPH AUTHENTICATION")
     print("="*60)
     
     try:
@@ -93,7 +145,21 @@ def acquire_graph_token() -> Optional[str]:
         return None
 
 
-def wizard_create_profile() -> dict:
+def load_headers_from_template(template_path: str) -> list:
+    """Load column headers from template .xlsx."""
+    from openpyxl import load_workbook
+    
+    try:
+        wb = load_workbook(template_path)
+        ws = wb.active
+        headers = [cell.value for cell in ws[1] if cell.value]
+        return headers
+    except Exception as e:
+        print(f"Failed to load template: {e}")
+        return []
+
+
+def wizard_create_profile(graph_available: bool, capabilities: Dict[str, bool]) -> dict:
     """Interactive wizard to create a profile."""
     print("\n" + "="*60)
     print("CREATE NEW PROFILE")
@@ -107,21 +173,61 @@ def wizard_create_profile() -> dict:
     
     # Input source
     print("\nSelect input source:")
-    print("  1. Microsoft Graph (requires Graph permissions)")
+    if graph_available and capabilities.get("mail"):
+        print("  1. Microsoft Graph (fetch from Outlook)")
+    else:
+        print("  1. Microsoft Graph (NOT AVAILABLE - missing mail permission)")
     print("  2. Local .eml files (no Graph required)")
     print("  3. Local CSV file (no Graph required)")
     
     source_choice = input("Choice [1-3]: ").strip()
     
     if source_choice == "1":
+        if not graph_available or not capabilities.get("mail"):
+            print("\n⚠ Graph mail access not available. Please choose option 2 or 3.")
+            return wizard_create_profile(graph_available, capabilities)
+        
         profile["input_source"] = "graph"
-        folder_name = input("Outlook folder name (e.g., Inbox): ").strip()
-        top = input("Number of newest messages [25]: ").strip() or "25"
-        profile["email_selection"] = {
-            "folder_name": folder_name,
-            "newest_n": int(top),
-            "search_query": None,
-        }
+        
+        # Email selection mode
+        print("\nEmail selection mode:")
+        print("  A. Folder + newest N messages")
+        print("  B. Search query (from/subject/date/attachments)")
+        sel_mode = input("Choice [A/B]: ").strip().upper()
+        
+        if sel_mode == "B":
+            # Build search query
+            print("\nBuild search query (leave blank to skip):")
+            from_contains = input("  From contains: ").strip()
+            subject_contains = input("  Subject contains: ").strip()
+            after_date = input("  After date (YYYY-MM-DD): ").strip()
+            has_attachments = input("  Has attachments? (y/n): ").strip().lower()
+            
+            search_parts = []
+            if from_contains:
+                search_parts.append(f"from:{from_contains}")
+            if subject_contains:
+                search_parts.append(f"subject:{subject_contains}")
+            if has_attachments == "y":
+                search_parts.append("hasAttachments:true")
+            
+            search_query = " AND ".join(search_parts) if search_parts else None
+            
+            profile["email_selection"] = {
+                "search_query": search_query,
+                "after_date": after_date if after_date else None,
+                "newest_n": int(input("  Max results [25]: ").strip() or "25"),
+            }
+        else:
+            # Folder mode
+            folder_name = input("Outlook folder name (e.g., Inbox): ").strip()
+            top = input("Number of newest messages [25]: ").strip() or "25"
+            profile["email_selection"] = {
+                "folder_name": folder_name,
+                "newest_n": int(top),
+                "search_query": None,
+            }
+    
     elif source_choice == "2":
         profile["input_source"] = "local_eml"
         directory = input("Directory path [./input_emails]: ").strip() or "./input_emails"
@@ -130,45 +236,83 @@ def wizard_create_profile() -> dict:
             "directory": directory,
             "pattern": pattern,
         }
+    
     elif source_choice == "3":
         profile["input_source"] = "local_csv"
         csv_path = input("CSV file path [./emails.csv]: ").strip() or "./emails.csv"
         profile["email_selection"] = {
             "csv_path": csv_path,
         }
+    
     else:
         print("Invalid choice. Defaulting to local .eml.")
         profile["input_source"] = "local_eml"
         profile["email_selection"] = {"directory": "./input_emails", "pattern": "*.eml"}
     
     # Schema
-    print("\nDefine schema columns (comma-separated, e.g., Subject,From,Date,Billing,IT):")
-    columns_input = input("Columns: ").strip()
-    columns = [c.strip() for c in columns_input.split(",") if c.strip()]
+    print("\nDefine schema:")
+    print("  A. Type column headers manually")
+    print("  B. Load headers from template .xlsx")
+    schema_choice = input("Choice [A/B]: ").strip().upper()
     
-    profile["schema"] = {
-        "columns": [{"name": col, "type": "text"} for col in columns]
-    }
+    if schema_choice == "B":
+        template_path = input("Template .xlsx path: ").strip()
+        headers = load_headers_from_template(template_path)
+        if headers:
+            print(f"Loaded {len(headers)} columns: {', '.join(headers)}")
+            profile["schema"] = {
+                "columns": [{"name": col, "type": "text"} for col in headers]
+            }
+        else:
+            print("Failed to load template. Falling back to manual entry.")
+            schema_choice = "A"
+    
+    if schema_choice == "A":
+        print("Enter column headers (comma-separated, e.g., Subject,From,Date,Billing,IT):")
+        columns_input = input("Columns: ").strip()
+        columns = [c.strip() for c in columns_input.split(",") if c.strip()]
+        
+        profile["schema"] = {
+            "columns": [{"name": col, "type": "text"} for col in columns]
+        }
     
     # Rules
-    print("\nDefine keyword rules (leave blank to skip):")
+    print("\nDefine keyword/regex rules (leave blank to skip):")
     rules = []
     while True:
         col_name = input("Column name (or blank to finish): ").strip()
         if not col_name:
             break
         
-        keywords_input = input(f"  Keywords for '{col_name}' (comma-separated): ").strip()
+        print(f"  Rule for column '{col_name}':")
+        keywords_input = input("    Keywords (comma-separated): ").strip()
         keywords = [kw.strip() for kw in keywords_input.split(",") if kw.strip()]
         
-        value = input(f"  Value if matched [Yes]: ").strip() or "Yes"
+        value = input("    Value if matched [Yes]: ").strip() or "Yes"
         
-        rules.append({
+        # Advanced options
+        word_boundary = input("    Use word boundaries? (y/n) [y]: ").strip().lower() != "n"
+        
+        print("    Search in: all, subject, body, attachments_text, attachments_names, from, to")
+        search_in_input = input("    Search in [all]: ").strip() or "all"
+        search_in = [s.strip() for s in search_in_input.split(",")]
+        
+        priority = input("    Priority (higher wins) [0]: ").strip()
+        priority = int(priority) if priority.isdigit() else 0
+        
+        rule = {
             "column": col_name,
             "keywords": keywords,
             "value": value,
             "unmatched_value": "",
-        })
+            "word_boundary": word_boundary,
+            "search_in": search_in,
+        }
+        
+        if priority > 0:
+            rule["priority"] = priority
+        
+        rules.append(rule)
     
     profile["rules"] = rules
     
@@ -180,9 +324,17 @@ def wizard_create_profile() -> dict:
     output_format = "excel" if format_choice == "1" else "csv"
     
     print("\nSelect output destination:")
-    print("  1. OneDrive (requires Graph permissions)")
+    if graph_available and capabilities.get("drive"):
+        print("  1. OneDrive")
+    else:
+        print("  1. OneDrive (NOT AVAILABLE - missing drive permission)")
     print("  2. Local file")
     dest_choice = input("Choice [1-2]: ").strip()
+    
+    if dest_choice == "1":
+        if not graph_available or not capabilities.get("drive"):
+            print("\n⚠ OneDrive access not available. Using local output.")
+            dest_choice = "2"
     
     if dest_choice == "1":
         destination = "onedrive"
@@ -219,20 +371,34 @@ def main():
     token = acquire_graph_token()
     
     graph_available = False
+    capabilities = {"me": False, "mail": False, "drive": False}
+    
     if token:
-        graph_available = test_graph_access(token)
+        capabilities = test_graph_capabilities(token)
+        graph_available = capabilities["me"]
+        
         if graph_available:
-            print("✓ Microsoft Graph access confirmed")
+            print("✓ Microsoft Graph connected")
+            if capabilities["mail"]:
+                print("  ✓ Mail access: OK")
+            else:
+                print("  ✗ Mail access: DENIED (cannot fetch emails)")
+            
+            if capabilities["drive"]:
+                print("  ✓ OneDrive access: OK")
+            else:
+                print("  ✗ OneDrive access: DENIED (cannot upload to OneDrive)")
         else:
-            print("✗ Microsoft Graph access denied (permissions issue)")
+            print("✗ Microsoft Graph access denied")
             token = None
     else:
-        print("✗ Microsoft Graph authentication failed")
+        print("✗ Microsoft Graph authentication unavailable")
     
     if not graph_available:
         print("\n" + "="*60)
         print("NO-GRAPH MODE")
         print("You can still use local .eml files or CSV inputs.")
+        print("Output will be saved to local files only.")
         print("="*60)
     
     # Load existing profiles
@@ -258,7 +424,7 @@ def main():
             sys.exit(1)
     
     elif choice == "2":
-        profile = wizard_create_profile()
+        profile = wizard_create_profile(graph_available, capabilities)
         
         # Validate
         errors = loader.validate_profile(profile)
@@ -276,15 +442,22 @@ def main():
         print("Exiting.")
         sys.exit(0)
     
-    # Check if profile requires Graph
-    requires_graph = (
-        profile.get("input_source") == "graph" or
-        profile.get("output", {}).get("destination") == "onedrive"
-    )
+    # Check if profile requires Graph capabilities
+    input_needs_mail = profile.get("input_source") == "graph"
+    output_needs_drive = profile.get("output", {}).get("destination") == "onedrive"
     
-    if requires_graph and not token:
-        print("\nERROR: This profile requires Microsoft Graph access, but authentication failed.")
-        print("Please use a profile with local input/output, or resolve Graph permissions.")
+    if input_needs_mail and not capabilities.get("mail"):
+        print("\n✗ ERROR: This profile requires Mail.Read permission, but access was denied.")
+        print("  Options:")
+        print("    1. Use a different profile with local input")
+        print("    2. Contact your IT admin to grant Mail.Read permission")
+        sys.exit(1)
+    
+    if output_needs_drive and not capabilities.get("drive"):
+        print("\n✗ ERROR: This profile requires Files.ReadWrite permission for OneDrive, but access was denied.")
+        print("  Options:")
+        print("    1. Use a different profile with local output")
+        print("    2. Contact your IT admin to grant Files.ReadWrite permission")
         sys.exit(1)
     
     # Execute profile

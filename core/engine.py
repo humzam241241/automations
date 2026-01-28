@@ -11,7 +11,7 @@ from adapters.excel_writer import ExcelWriter
 from adapters.graph_email import GraphEmailAdapter
 from adapters.local_email import LocalEmailAdapter
 from adapters.onedrive_storage import OneDriveAdapter
-from jobs.email_to_table import email_to_row
+from jobs.email_to_table import email_to_record
 
 
 class ExecutionEngine:
@@ -28,7 +28,7 @@ class ExecutionEngine:
     
     def run_profile(self, profile: Dict, explain: bool = False) -> Dict:
         """
-        Execute a profile configuration.
+        Execute a profile configuration with pipeline support.
         
         Args:
             profile: Profile dict
@@ -39,6 +39,9 @@ class ExecutionEngine:
         """
         logging.info(f"Running profile: {profile.get('name')}")
         
+        # Get pipeline (default to email_to_table for backward compat)
+        pipeline = profile.get("pipeline", ["email_to_table"])
+        
         # 1. Load emails based on input_source
         emails = self._load_emails(profile)
         logging.info(f"Loaded {len(emails)} emails")
@@ -46,28 +49,35 @@ class ExecutionEngine:
         if not emails:
             return {"status": "no_emails", "message": "No emails found"}
         
-        # 2. Convert emails to rows
-        schema = profile.get("schema", {})
-        rules = profile.get("rules", [])
-        
-        all_headers = None
-        all_rows = []
+        # 2. Execute pipeline
+        records = []
         explanations = []
         
-        for email_data in emails:
-            headers, row, explanation = email_to_row(email_data, schema, rules, explain)
-            if all_headers is None:
-                all_headers = headers
-            all_rows.append(row)
-            if explain:
-                explanations.append(explanation)
+        for job_name in pipeline:
+            if job_name == "email_to_table":
+                records, explanations = self._job_email_to_table(
+                    emails, profile, explain
+                )
+            elif job_name == "append_to_master":
+                records = self._job_append_to_master(records, profile)
+            elif job_name == "excel_to_biready":
+                records = self._job_excel_to_biready(records, profile)
+            else:
+                logging.warning(f"Unknown job: {job_name}")
         
-        # 3. Write output
-        output_result = self._write_output(profile, all_headers, all_rows)
+        if not records:
+            return {"status": "no_data", "message": "Pipeline produced no data"}
+        
+        # 3. Convert records to headers + rows for output
+        headers, rows = self._records_to_table(records, profile)
+        
+        # 4. Write output
+        output_result = self._write_output(profile, headers, rows)
         
         result = {
             "status": "success",
             "emails_processed": len(emails),
+            "records_produced": len(records),
             "output": output_result,
         }
         
@@ -76,6 +86,185 @@ class ExecutionEngine:
         
         logging.info(f"Profile execution complete: {result}")
         return result
+    
+    def _job_email_to_table(
+        self,
+        emails: List[Dict],
+        profile: Dict,
+        explain: bool
+    ) -> tuple[List[Dict], List[Dict]]:
+        """Execute email_to_table job."""
+        schema = profile.get("schema", {})
+        rules = profile.get("rules", [])
+        
+        records = []
+        explanations = []
+        
+        for email_data in emails:
+            record, explanation = email_to_record(email_data, schema, rules, explain)
+            records.append(record)
+            if explain:
+                explanations.append(explanation)
+        
+        return records, explanations
+    
+    def _job_append_to_master(
+        self,
+        records: List[Dict],
+        profile: Dict
+    ) -> List[Dict]:
+        """Execute append_to_master job."""
+        try:
+            from jobs.append_to_master import append_rows
+            
+            master_config = profile.get("master_dataset", {})
+            master_path = master_config.get("path")
+            dedupe_column = master_config.get("deduplicate_column")
+            
+            if not master_path:
+                logging.warning("No master_dataset.path in profile, skipping append")
+                return records
+            
+            # Load existing master if exists
+            existing_records = self._load_master_records(master_path)
+            
+            # Convert to headers+rows for append_rows function
+            if existing_records:
+                existing_headers = list(existing_records[0].keys())
+                existing_rows = [list(r.values()) for r in existing_records]
+            else:
+                existing_headers = []
+                existing_rows = []
+            
+            new_headers = list(records[0].keys()) if records else []
+            new_rows = [list(r.values()) for r in records]
+            
+            merged_headers, merged_rows = append_rows(
+                existing_headers,
+                existing_rows,
+                new_headers,
+                new_rows,
+                dedupe_column
+            )
+            
+            # Convert back to records
+            merged_records = []
+            for row in merged_rows:
+                record = {h: v for h, v in zip(merged_headers, row)}
+                merged_records.append(record)
+            
+            # Save master
+            self._save_master_records(master_path, merged_records)
+            
+            return merged_records
+        
+        except ImportError:
+            logging.warning("append_to_master job not available")
+            return records
+    
+    def _job_excel_to_biready(
+        self,
+        records: List[Dict],
+        profile: Dict
+    ) -> List[Dict]:
+        """Execute excel_to_biready job."""
+        try:
+            from jobs.excel_to_biready import apply_bi_transformations
+            
+            transformations = profile.get("bi_transformations", [])
+            if not transformations:
+                return records
+            
+            # Convert to headers+rows
+            headers = list(records[0].keys()) if records else []
+            rows = [list(r.values()) for r in records]
+            
+            # Apply transformations
+            new_headers, new_rows = apply_bi_transformations(
+                headers, rows, transformations
+            )
+            
+            # Convert back to records
+            new_records = []
+            for row in new_rows:
+                record = {h: v for h, v in zip(new_headers, row)}
+                new_records.append(record)
+            
+            return new_records
+        
+        except ImportError:
+            logging.warning("excel_to_biready job not available")
+            return records
+    
+    def _records_to_table(
+        self,
+        records: List[Dict],
+        profile: Dict
+    ) -> tuple[List[str], List[List[str]]]:
+        """Convert records to headers + rows, preserving schema order."""
+        if not records:
+            return [], []
+        
+        # Get headers from profile schema to preserve order
+        schema = profile.get("schema", {})
+        if schema and schema.get("columns"):
+            headers = [
+                col.get("name", col.get("header", ""))
+                for col in schema.get("columns", [])
+            ]
+        else:
+            # Fallback: use keys from first record
+            headers = list(records[0].keys())
+        
+        # Build rows aligned to headers
+        rows = []
+        for record in records:
+            row = [record.get(h, "") for h in headers]
+            rows.append(row)
+        
+        return headers, rows
+    
+    def _load_master_records(self, path: str) -> List[Dict]:
+        """Load existing master dataset."""
+        from pathlib import Path
+        import csv
+        
+        file_path = Path(path)
+        if not file_path.exists():
+            return []
+        
+        records = []
+        if path.endswith(".csv"):
+            with file_path.open("r", encoding="utf-8") as f:
+                reader = csv.DictReader(f)
+                records = list(reader)
+        elif path.endswith(".xlsx"):
+            from openpyxl import load_workbook
+            wb = load_workbook(path)
+            ws = wb.active
+            headers = [cell.value for cell in ws[1]]
+            for row in ws.iter_rows(min_row=2, values_only=True):
+                record = {h: v for h, v in zip(headers, row)}
+                records.append(record)
+        
+        return records
+    
+    def _save_master_records(self, path: str, records: List[Dict]):
+        """Save master dataset."""
+        if not records:
+            return
+        
+        headers = list(records[0].keys())
+        rows = [list(r.values()) for r in records]
+        
+        if path.endswith(".csv"):
+            writer = CSVWriter()
+            content = writer.create_csv(headers, rows)
+            Path(path).write_bytes(content)
+        elif path.endswith(".xlsx"):
+            writer = ExcelWriter()
+            content = writer.create_workbook(headers, rows)
+            Path(path).write_bytes(content)
     
     def _load_emails(self, profile: Dict) -> List[Dict]:
         """Load emails based on profile input_source."""

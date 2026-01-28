@@ -10,45 +10,158 @@ def normalize_text(text: str) -> str:
     return re.sub(r"\s+", " ", text or "").strip().lower()
 
 
-def apply_keyword_rules(content: str, rules: List[Dict]) -> Dict[str, str]:
+def extract_snippet(text: str, match_pos: int, context: int = 30) -> str:
+    """Extract a snippet around a match position."""
+    start = max(0, match_pos - context)
+    end = min(len(text), match_pos + context)
+    snippet = text[start:end]
+    if start > 0:
+        snippet = "..." + snippet
+    if end < len(text):
+        snippet = snippet + "..."
+    return snippet.strip()
+
+
+def get_search_content(email_data: Dict, search_in: List[str]) -> str:
     """
-    Apply keyword/regex rules to content.
+    Build search content based on search_in specification.
     
     Args:
-        content: Combined email text (subject + body + attachments)
-        rules: List of rule dicts with {column, keywords, regex, value, unmatched_value}
+        email_data: Email dict
+        search_in: List of fields to search in
     
     Returns:
-        Dict mapping column name to matched value
+        Combined text from specified fields
     """
-    normalized = normalize_text(content)
-    result = {}
+    parts = []
     
-    for rule in rules:
+    if "all" in search_in:
+        search_in = ["subject", "body", "attachments_text", "attachments_names", "from", "to"]
+    
+    if "subject" in search_in:
+        parts.append(email_data.get("subject", ""))
+    
+    if "body" in search_in:
+        parts.append(email_data.get("body", ""))
+    
+    if "attachments_text" in search_in:
+        parts.extend(email_data.get("attachment_text", []))
+    
+    if "attachments_names" in search_in:
+        parts.extend(email_data.get("attachments", []))
+    
+    if "from" in search_in:
+        parts.append(email_data.get("from", ""))
+    
+    if "to" in search_in:
+        parts.append(email_data.get("to", ""))
+    
+    return " ".join(parts)
+
+
+def apply_keyword_rules_enhanced(
+    email_data: Dict,
+    rules: List[Dict],
+    explain: bool = False
+) -> Tuple[Dict[str, str], Dict[str, Dict]]:
+    """
+    Apply keyword/regex rules with enhanced matching and explanation.
+    
+    Args:
+        email_data: Email dict
+        rules: List of rule dicts
+        explain: If True, collect detailed match info
+    
+    Returns:
+        (result_dict, explanation_dict)
+        result_dict: {column: value}
+        explanation_dict: {column: {matched, match_type, matched_term, search_in, snippet}}
+    """
+    result = {}
+    explanations = {}
+    
+    # Sort rules by priority (higher first), then by order
+    sorted_rules = sorted(
+        rules,
+        key=lambda r: (r.get("priority", 0), -rules.index(r)),
+        reverse=True
+    )
+    
+    for rule in sorted_rules:
         column = rule.get("column", rule.get("header", ""))
+        
+        # First match wins - skip if column already has a value
+        if column in result:
+            continue
+        
         keywords = rule.get("keywords", [])
         regex_pattern = rule.get("regex")
         value = rule.get("value", "Yes")
         unmatched_value = rule.get("unmatched_value", "")
+        search_in = rule.get("search_in", ["all"])
+        word_boundary = rule.get("word_boundary", True)
+        
+        # Build search content
+        content = get_search_content(email_data, search_in)
+        normalized = normalize_text(content)
         
         matched = False
+        match_type = None
+        matched_term = None
+        snippet = None
         
         # Keyword matching
         if keywords:
-            keywords_lower = [kw.lower() for kw in keywords]
-            matched = any(kw in normalized for kw in keywords_lower)
+            for keyword in keywords:
+                keyword_lower = keyword.lower()
+                
+                if word_boundary:
+                    # Word-aware matching
+                    pattern = r'\b' + re.escape(keyword_lower) + r'\b'
+                    match = re.search(pattern, normalized)
+                    if match:
+                        matched = True
+                        match_type = "keyword_word"
+                        matched_term = keyword
+                        if explain:
+                            snippet = extract_snippet(content, match.start())
+                        break
+                else:
+                    # Substring matching
+                    if keyword_lower in normalized:
+                        matched = True
+                        match_type = "keyword_substring"
+                        matched_term = keyword
+                        if explain:
+                            pos = normalized.find(keyword_lower)
+                            snippet = extract_snippet(content, pos)
+                        break
         
         # Regex matching
         if regex_pattern and not matched:
             try:
-                if re.search(regex_pattern, content, re.IGNORECASE):
+                match = re.search(regex_pattern, content, re.IGNORECASE)
+                if match:
                     matched = True
+                    match_type = "regex"
+                    matched_term = regex_pattern
+                    if explain:
+                        snippet = extract_snippet(content, match.start())
             except re.error:
                 pass
         
         result[column] = value if matched else unmatched_value
+        
+        if explain:
+            explanations[column] = {
+                "matched": matched,
+                "match_type": match_type,
+                "matched_term": matched_term,
+                "search_in": search_in,
+                "snippet": snippet,
+            }
     
-    return result
+    return result, explanations
 
 
 def extract_email_fields(email_data: Dict) -> Dict[str, str]:
@@ -71,6 +184,49 @@ def extract_email_fields(email_data: Dict) -> Dict[str, str]:
     }
 
 
+def email_to_record(
+    email_data: Dict,
+    schema: Dict,
+    rules: List[Dict],
+    explain: bool = False
+) -> Tuple[Dict[str, str], Dict]:
+    """
+    Convert email to record dict (NEW canonical format).
+    
+    Args:
+        email_data: Email dict
+        schema: Schema dict with {columns: [{name, type}, ...]}
+        rules: List of keyword/regex rules
+        explain: If True, return explanation of which rules matched
+    
+    Returns:
+        (record_dict, explanation_dict)
+        record_dict: {column_name: value}
+        explanation_dict: {column_name: match_details}
+    """
+    standard_fields = extract_email_fields(email_data)
+    
+    # Apply rules with enhanced matching
+    rule_results, rule_explanations = apply_keyword_rules_enhanced(
+        email_data, rules, explain
+    )
+    
+    # Build record dict based on schema order
+    record = {}
+    for col in schema.get("columns", []):
+        col_name = col.get("name", col.get("header", ""))
+        
+        # Priority: standard fields > rule results > empty
+        if col_name in standard_fields:
+            record[col_name] = standard_fields[col_name]
+        elif col_name in rule_results:
+            record[col_name] = rule_results[col_name]
+        else:
+            record[col_name] = ""
+    
+    return record, rule_explanations
+
+
 def email_to_row(
     email_data: Dict,
     schema: Dict,
@@ -78,7 +234,7 @@ def email_to_row(
     explain: bool = False
 ) -> Tuple[List[str], List[str], Dict]:
     """
-    Convert email to table row.
+    Convert email to table row (BACKWARD COMPATIBLE).
     
     Args:
         email_data: Email dict
@@ -89,35 +245,10 @@ def email_to_row(
     Returns:
         (headers, row_values, explanation_dict)
     """
-    standard_fields = extract_email_fields(email_data)
+    record, explanation = email_to_record(email_data, schema, rules, explain)
     
-    # Build combined content for rule matching
-    combined_content = " ".join([
-        email_data.get("subject", ""),
-        email_data.get("body", ""),
-        " ".join(email_data.get("attachment_text", [])),
-    ])
-    
-    rule_results = apply_keyword_rules(combined_content, rules)
-    
-    headers = []
-    row = []
-    explanation = {}
-    
-    # Add schema columns
-    for col in schema.get("columns", []):
-        col_name = col.get("name", col.get("header", ""))
-        headers.append(col_name)
-        
-        # Check if it's a standard field
-        if col_name in standard_fields:
-            row.append(standard_fields[col_name])
-        # Check if it's a rule-based column
-        elif col_name in rule_results:
-            row.append(rule_results[col_name])
-            if explain and rule_results[col_name]:
-                explanation[col_name] = f"Matched in content"
-        else:
-            row.append("")
+    # Convert record to headers + row
+    headers = list(record.keys())
+    row = list(record.values())
     
     return headers, row, explanation

@@ -1,6 +1,6 @@
 {
   "name": "example_graph",
-  "description": "Example profile using Microsoft Graph",
+  "description": "Example profile using Microsoft Graph with enhanced rules",
   "input_source": "graph",
   "email_selection": {
     "folder_name": "Inbox",
@@ -22,21 +22,30 @@
       "column": "Billing",
       "keywords": ["invoice", "billing", "payment"],
       "value": "Yes",
-      "unmatched_value": ""
+      "unmatched_value": "",
+      "word_boundary": true,
+      "search_in": ["subject", "body"],
+      "priority": 10
     },
     {
       "column": "IT",
       "keywords": ["laptop", "vpn", "password"],
       "value": "Yes",
-      "unmatched_value": ""
+      "unmatched_value": "",
+      "word_boundary": true,
+      "search_in": ["all"],
+      "priority": 5
     },
     {
       "column": "HR",
       "keywords": ["benefits", "onboarding", "policy"],
       "value": "Yes",
-      "unmatched_value": ""
+      "unmatched_value": "",
+      "word_boundary": true,
+      "search_in": ["subject", "body"]
     }
   ],
+  "pipeline": ["email_to_table"],
   "output": {
     "format": "excel",
     "destination": "onedrive",
