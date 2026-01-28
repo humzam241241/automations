@@ -241,18 +241,42 @@ def open_file_dialog():
         root.attributes('-topmost', True)
         root.focus_force()
         
-        # Set initial directory
+        # Find the REAL Downloads folder (check OneDrive first)
         if not initial_dir:
-            # Default to Downloads folder
-            initial_dir = str(Path.home() / 'Downloads')
+            possible_downloads = [
+                Path.home() / 'OneDrive - Sanofi' / 'Downloads',
+                Path.home() / 'OneDrive' / 'Downloads',
+                Path.home() / 'Downloads',
+                Path(os.environ.get('USERPROFILE', '')) / 'Downloads',
+            ]
+            
+            for dl in possible_downloads:
+                if dl.exists() and any(dl.iterdir()):
+                    initial_dir = str(dl)
+                    break
+            
+            if not initial_dir:
+                initial_dir = str(Path.home() / 'Downloads')
         
         if dialog_type == 'directory':
-            # Folder picker with clear title
-            path = filedialog.askdirectory(
-                title='Select Folder (Choose the folder containing your files)',
+            # FOR FOLDER SELECTION: Let user pick ANY file, then get its folder
+            # This way they can SEE their files while browsing!
+            result = filedialog.askopenfilename(
+                title='Select ANY file inside the folder you want (we will use that folder)',
                 initialdir=initial_dir,
-                mustexist=True
+                filetypes=[
+                    ('All Files', '*.*'),
+                    ('Email Files', '*.eml *.msg'),
+                    ('Excel Files', '*.xlsx *.xls'),
+                    ('CSV Files', '*.csv'),
+                ]
             )
+            
+            if result:
+                # Extract the folder from the selected file
+                path = str(Path(result).parent)
+            else:
+                path = None
         else:
             # File picker with all important types visible
             if file_types:
@@ -262,15 +286,13 @@ def open_file_dialog():
             else:
                 # Default: show all important file types
                 filetypes = [
+                    ('All Files', '*.*'),  # Put "All Files" FIRST so user sees everything
                     ('Email Files', '*.eml *.msg'),
                     ('Excel Files', '*.xlsx *.xls'),
                     ('CSV Files', '*.csv'),
                     ('PDF Files', '*.pdf'),
                     ('Text Files', '*.txt'),
                 ]
-            
-            # Always add "All Files" option at the end
-            filetypes.append(('All Files', '*.*'))
             
             path = filedialog.askopenfilename(
                 title='Select File',
