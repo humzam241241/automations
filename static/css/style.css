@@ -743,3 +743,165 @@ button {
     background: #fff;
     color: #856404;
 }
+
+/* Column Builder */
+.column-builder {
+    background: var(--gray-50);
+    border: 1px solid var(--gray-200);
+    border-radius: 12px;
+    padding: 16px;
+}
+
+.column-list {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 8px;
+    margin-bottom: 12px;
+    min-height: 40px;
+}
+
+.column-tag {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    background: white;
+    border: 1px solid var(--gray-200);
+    border-radius: 20px;
+    padding: 6px 12px;
+    font-size: 13px;
+    animation: fadeIn 0.2s;
+}
+
+.column-tag .column-tag-name {
+    font-weight: 600;
+    color: var(--gray-800);
+}
+
+.column-tag .column-tag-type {
+    font-size: 11px;
+    color: var(--gray-700);
+    background: var(--gray-100);
+    padding: 2px 6px;
+    border-radius: 10px;
+}
+
+.column-tag .column-tag-remove {
+    background: none;
+    border: none;
+    color: var(--gray-300);
+    cursor: pointer;
+    font-size: 16px;
+    padding: 0 4px;
+    transition: color 0.2s;
+}
+
+.column-tag .column-tag-remove:hover {
+    color: var(--danger);
+}
+
+/* Type-specific colors */
+.column-tag[data-type="number"] {
+    border-color: #667eea;
+    background: linear-gradient(135deg, #f0f4ff 0%, #fff 100%);
+}
+.column-tag[data-type="number"] .column-tag-type {
+    background: #667eea;
+    color: white;
+}
+
+.column-tag[data-type="text"] {
+    border-color: #48bb78;
+    background: linear-gradient(135deg, #f0fff4 0%, #fff 100%);
+}
+.column-tag[data-type="text"] .column-tag-type {
+    background: #48bb78;
+    color: white;
+}
+
+.column-tag[data-type="date"] {
+    border-color: #ed8936;
+    background: linear-gradient(135deg, #fffaf0 0%, #fff 100%);
+}
+.column-tag[data-type="date"] .column-tag-type {
+    background: #ed8936;
+    color: white;
+}
+
+.column-tag[data-type="amount"] {
+    border-color: #38b2ac;
+    background: linear-gradient(135deg, #e6fffa 0%, #fff 100%);
+}
+.column-tag[data-type="amount"] .column-tag-type {
+    background: #38b2ac;
+    color: white;
+}
+
+.column-tag[data-type="yesno"] {
+    border-color: #9f7aea;
+    background: linear-gradient(135deg, #faf5ff 0%, #fff 100%);
+}
+.column-tag[data-type="yesno"] .column-tag-type {
+    background: #9f7aea;
+    color: white;
+}
+
+.column-tag[data-type="email_field"] {
+    border-color: #f56565;
+    background: linear-gradient(135deg, #fff5f5 0%, #fff 100%);
+}
+.column-tag[data-type="email_field"] .column-tag-type {
+    background: #f56565;
+    color: white;
+}
+
+.add-column-row {
+    display: flex;
+    gap: 8px;
+    align-items: center;
+}
+
+.column-name-input {
+    flex: 1;
+    padding: 10px 14px;
+    border: 1px solid var(--gray-200);
+    border-radius: 8px;
+    font-size: 14px;
+}
+
+.column-name-input:focus {
+    outline: none;
+    border-color: var(--primary);
+    box-shadow: 0 0 0 3px rgba(102, 126, 234, 0.1);
+}
+
+.column-type-select {
+    padding: 10px 14px;
+    border: 1px solid var(--gray-200);
+    border-radius: 8px;
+    font-size: 14px;
+    background: white;
+    cursor: pointer;
+    min-width: 150px;
+}
+
+.column-type-select:focus {
+    outline: none;
+    border-color: var(--primary);
+}
+
+.btn-add-column {
+    background: var(--primary);
+    color: white;
+    border: none;
+    padding: 10px 16px;
+    border-radius: 8px;
+    font-weight: 600;
+    cursor: pointer;
+    transition: all 0.2s;
+    white-space: nowrap;
+}
+
+.btn-add-column:hover {
+    background: var(--primary-dark);
+    transform: translateY(-1px);
+}

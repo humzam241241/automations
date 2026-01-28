@@ -304,6 +304,8 @@ async function runProfile() {
 
 function showCreateProfile() {
     document.getElementById('createProfileModal').style.display = 'flex';
+    // Clear and reset the column builder
+    clearColumns();
     updateInputOptions();
 }
 
@@ -311,8 +313,8 @@ function closeCreateProfile() {
     document.getElementById('createProfileModal').style.display = 'none';
     // Reset form
     document.getElementById('profileName').value = '';
-    document.getElementById('columns').value = '';
     document.getElementById('autoDetect').checked = false;
+    clearColumns();
 }
 
 function updateInputOptions() {
@@ -382,6 +384,139 @@ function toggleColumnHelp() {
     }
 }
 
+// ===== COLUMN BUILDER =====
+
+let profileColumns = [];  // Array of {name: string, type: string}
+
+function addColumn() {
+    const nameInput = document.getElementById('newColumnName');
+    const typeSelect = document.getElementById('newColumnType');
+    
+    const name = nameInput.value.trim();
+    const type = typeSelect.value;
+    
+    if (!name) {
+        nameInput.focus();
+        return;
+    }
+    
+    // Check for duplicates
+    if (profileColumns.some(c => c.name.toLowerCase() === name.toLowerCase())) {
+        alert(`Column "${name}" already exists`);
+        return;
+    }
+    
+    // Add to array
+    profileColumns.push({ name, type });
+    
+    // Update UI
+    renderColumns();
+    updateHiddenInputs();
+    
+    // Clear input
+    nameInput.value = '';
+    nameInput.focus();
+}
+
+function removeColumn(index) {
+    profileColumns.splice(index, 1);
+    renderColumns();
+    updateHiddenInputs();
+}
+
+function renderColumns() {
+    const list = document.getElementById('columnList');
+    
+    if (profileColumns.length === 0) {
+        list.innerHTML = '<span style="color: #999; font-size: 13px;">No columns added yet. Add columns below.</span>';
+        return;
+    }
+    
+    const typeLabels = {
+        'auto': '🤖 Auto',
+        'number': '🔢 Number',
+        'text': '📝 Text',
+        'date': '📅 Date',
+        'amount': '💰 Amount',
+        'yesno': '✅ Yes/No',
+        'email_field': '📧 Email'
+    };
+    
+    list.innerHTML = profileColumns.map((col, index) => `
+        <div class="column-tag" data-type="${col.type}">
+            <span class="column-tag-name">${escapeHtml(col.name)}</span>
+            <span class="column-tag-type">${typeLabels[col.type] || col.type}</span>
+            <button class="column-tag-remove" onclick="removeColumn(${index})" title="Remove">&times;</button>
+        </div>
+    `).join('');
+}
+
+function updateHiddenInputs() {
+    // Update hidden inputs for form submission
+    const columnsInput = document.getElementById('columns');
+    const typesInput = document.getElementById('columnTypes');
+    
+    columnsInput.value = profileColumns.map(c => c.name).join(',');
+    typesInput.value = JSON.stringify(profileColumns);
+}
+
+function escapeHtml(text) {
+    const div = document.createElement('div');
+    div.textContent = text;
+    return div.innerHTML;
+}
+
+function clearColumns() {
+    profileColumns = [];
+    renderColumns();
+    updateHiddenInputs();
+}
+
+function loadColumnsFromString(columnsStr, typesStr) {
+    // Parse columns and types
+    profileColumns = [];
+    
+    if (typesStr) {
+        try {
+            profileColumns = JSON.parse(typesStr);
+        } catch (e) {
+            // Fallback: parse comma-separated columns as auto type
+            if (columnsStr) {
+                profileColumns = columnsStr.split(',').map(name => ({
+                    name: name.trim(),
+                    type: 'auto'
+                })).filter(c => c.name);
+            }
+        }
+    } else if (columnsStr) {
+        // Legacy: comma-separated columns
+        profileColumns = columnsStr.split(',').map(name => ({
+            name: name.trim(),
+            type: 'auto'
+        })).filter(c => c.name);
+    }
+    
+    renderColumns();
+    updateHiddenInputs();
+}
+
+// Handle Enter key in column name input
+document.addEventListener('DOMContentLoaded', () => {
+    setTimeout(() => {
+        const input = document.getElementById('newColumnName');
+        if (input) {
+            input.addEventListener('keypress', (e) => {
+                if (e.key === 'Enter') {
+                    e.preventDefault();
+                    addColumn();
+                }
+            });
+        }
+        // Initialize empty column list
+        renderColumns();
+    }, 100);
+});
+
 async function detectColumns() {
     const filePath = document.getElementById('filePath').value.trim();
     const inputSource = document.getElementById('inputSource').value;
@@ -420,7 +555,6 @@ async function detectColumns() {
 async function saveProfile() {
     const name = document.getElementById('profileName').value.trim();
     const inputSource = document.getElementById('inputSource').value;
-    const columns = document.getElementById('columns').value.trim();
     const outputType = document.getElementById('outputType').value;
     const autoDetect = document.getElementById('autoDetect').checked;
     
@@ -429,10 +563,17 @@ async function saveProfile() {
         return;
     }
     
-    if (!autoDetect && !columns) {
-        alert('Please specify columns or enable auto-detect');
+    if (!autoDetect && profileColumns.length === 0) {
+        alert('Please add at least one column or enable auto-detect');
         return;
     }
+    
+    // Build schema columns with types
+    const schemaColumns = profileColumns.map(col => ({
+        name: col.name,
+        type: col.type || 'auto',
+        extract_type: col.type || 'auto'  // Used by extraction engine
+    }));
     
     // Build profile
     const profile = {
@@ -441,7 +582,7 @@ async function saveProfile() {
         auto_detect_columns: autoDetect,
         email_selection: {},
         schema: {
-            columns: autoDetect ? [] : columns.split(',').map(c => ({name: c.trim(), type: 'text'}))
+            columns: autoDetect ? [] : schemaColumns
         },
         rules: [],
         output: {

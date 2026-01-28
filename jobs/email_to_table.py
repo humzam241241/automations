@@ -210,23 +210,63 @@ def extract_email_fields(email_data: Dict) -> Dict[str, str]:
     return standard
 
 
-def smart_search_column(email_data: Dict, column_name: str) -> str:
+def _extract_number_only(column_name: str, content: str) -> str:
+    """
+    Extract ONLY numbers/IDs - NEVER returns "Yes".
+    
+    For columns like "MI #", "Building Number", "Work Order ID".
+    """
+    column_lower = column_name.lower().strip()
+    
+    # Get the prefix (part before number/id/#/etc.)
+    prefix = column_name
+    for suffix in ['number', 'num', '#', 'no.', 'no', 'id', 'code', 'ref', 'reference']:
+        prefix = re.sub(rf'\s*{re.escape(suffix)}\s*$', '', prefix, flags=re.IGNORECASE)
+    prefix = prefix.strip()
+    
+    # If we have a prefix, search for PREFIX + NUMBER
+    if prefix:
+        extracted = extract_prefix_numbers(prefix, content)
+        if extracted:
+            return extracted
+    
+    # If column name is just a short code (MI, QE, MM), search directly
+    column_stripped = re.sub(r'[#\s\.\-_]+', '', column_name)
+    if len(column_stripped) <= 5 and column_stripped.isupper():
+        extracted = extract_prefix_numbers(column_stripped, content)
+        if extracted:
+            return extracted
+    
+    # Last resort: look for "ColumnName: 12345" pattern
+    pattern = rf'{re.escape(column_name)}\s*[:\-=]\s*(\d[\d\-]*)'
+    match = re.search(pattern, content, re.IGNORECASE)
+    if match:
+        return match.group(1)
+    
+    # Return empty string - NOT "Yes"!
+    return ""
+
+
+def smart_search_column(email_data: Dict, column_name: str, extract_type: str = "auto") -> str:
     """
     FULLY INTELLIGENT column extraction - works with ANY column name!
     
-    No hardcoded prefixes - automatically detects patterns:
-    - "Building Number" → finds Building + numbers
-    - "Work Order #" → finds Work Order + numbers  
-    - "XYZ ID" → finds XYZ + numbers
-    - "ABC123" → finds ABC123 patterns
-    - ANY "Something Number" or "Something #" → extracts numbers
+    Now supports explicit TYPE to prevent wrong extractions:
+    - "number" → ONLY extract numbers, never return "Yes"
+    - "text" → Extract text values
+    - "date" → Extract dates
+    - "amount" → Extract currency
+    - "yesno" → Check keyword presence (Yes/No)
+    - "email_field" → Standard email field
+    - "auto" → Auto-detect from column name
     
     Args:
         email_data: Email dict
         column_name: ANY column name the user types
+        extract_type: The expected value type (number, text, date, amount, yesno, auto)
     
     Returns:
-        Intelligently extracted value(s)
+        Extracted value based on type
     """
     # Get all content from email
     subject = str(email_data.get("subject", ""))
@@ -242,8 +282,59 @@ def smart_search_column(email_data: Dict, column_name: str) -> str:
     column_lower = column_name.lower().strip()
     
     # ============================================================
-    # STEP 1: DETECT IF THIS IS A "NUMBER" COLUMN
-    # Triggers on: #, Number, No, ID, Num, Code, Ref at end
+    # EXPLICIT TYPE HANDLING - User selected a specific type
+    # This prevents "Yes" being returned when expecting a number
+    # ============================================================
+    
+    if extract_type == "number":
+        # USER WANTS NUMBERS ONLY - never return "Yes"
+        return _extract_number_only(column_name, all_content)
+    
+    elif extract_type == "date":
+        # USER WANTS DATES ONLY
+        email_date = email_data.get("date", "")
+        if email_date:
+            return str(email_date)
+        date_pattern = r'\d{1,2}[/\-]\d{1,2}[/\-]\d{2,4}|\d{4}[/\-]\d{1,2}[/\-]\d{1,2}'
+        match = re.search(date_pattern, all_content)
+        return match.group() if match else ""
+    
+    elif extract_type == "amount":
+        # USER WANTS CURRENCY/AMOUNTS ONLY
+        amount_pattern = r'[\$€£]\s*[\d,]+\.?\d*|\d{1,3}(?:,\d{3})*(?:\.\d{2})?'
+        match = re.search(amount_pattern, all_content)
+        return match.group() if match else ""
+    
+    elif extract_type == "yesno":
+        # USER WANTS YES/NO - check keyword presence
+        pattern = r'\b' + re.escape(column_lower) + r'\b'
+        return "Yes" if re.search(pattern, all_content_lower) else "No"
+    
+    elif extract_type == "text":
+        # USER WANTS TEXT - extract value after "Column: value"
+        extract_pattern = rf'{re.escape(column_name)}\s*[:\-=]\s*([^\n,;]+)'
+        match = re.search(extract_pattern, all_content, re.IGNORECASE)
+        if match:
+            value = match.group(1).strip()
+            if 0 < len(value) < 200:
+                return value
+        return ""
+    
+    elif extract_type == "email_field":
+        # USER WANTS STANDARD EMAIL FIELD
+        field_map = {
+            'subject': subject, 'from': from_addr, 'sender': from_addr,
+            'to': to_addr, 'recipient': to_addr, 'date': email_data.get("date", ""),
+            'body': body, 'content': body, 'message': body,
+            'attachments': ", ".join(email_data.get("attachments", []))
+        }
+        for key, value in field_map.items():
+            if key in column_lower:
+                return str(value) if value else ""
+        return ""
+    
+    # ============================================================
+    # AUTO-DETECT MODE (default) - Smart detection from column name
     # ============================================================
     
     number_indicators = ['#', 'number', 'no.', 'no', 'id', 'num', 'code', 'ref', 'reference']
@@ -253,32 +344,13 @@ def smart_search_column(email_data: Dict, column_name: str) -> str:
     column_stripped = re.sub(r'[#\s\.\-_]+', '', column_name)
     is_abbreviation = len(column_stripped) <= 5 and column_stripped.isupper()
     
+    # If it looks like a number column, extract numbers (no "Yes" fallback)
     if is_number_column or is_abbreviation:
-        # Extract the PREFIX part (the identifier before "number", "#", etc.)
-        prefix = column_name
-        
-        # Remove common suffixes to get the core prefix
-        for suffix in ['number', 'num', '#', 'no.', 'no', 'id', 'code', 'ref', 'reference']:
-            prefix = re.sub(rf'\s*{re.escape(suffix)}\s*$', '', prefix, flags=re.IGNORECASE)
-        
-        prefix = prefix.strip()
-        
-        # If we have a prefix, search for PREFIX + NUMBER patterns
-        if prefix:
-            extracted = extract_prefix_numbers(prefix, all_content)
-            if extracted:
-                return extracted
-        
-        # If no prefix (column was just "#" or "Number"), extract ALL numbers
-        if not prefix or prefix in ['#', '']:
-            all_numbers = re.findall(r'\b(\d{4,})\b', all_content)
-            if all_numbers:
-                unique_nums = list(dict.fromkeys(all_numbers))[:5]
-                return "; ".join(unique_nums)
-    
-    # ============================================================
-    # STEP 2: STANDARD FIELD EXTRACTION
-    # ============================================================
+        result = _extract_number_only(column_name, all_content)
+        if result:
+            return result
+        # Don't fall back to "Yes" for number columns!
+        return ""
     
     # Date columns
     if any(kw in column_lower for kw in ['date', 'time', 'when', 'received', 'sent', 'due']):
@@ -435,7 +507,7 @@ def email_to_record(
     
     Args:
         email_data: Email dict
-        schema: Schema dict with {columns: [{name, type}, ...]}
+        schema: Schema dict with {columns: [{name, type, extract_type}, ...]}
         rules: List of keyword/regex rules
         explain: If True, return explanation of which rules matched
     
@@ -457,6 +529,7 @@ def email_to_record(
     
     for col in schema.get("columns", []):
         col_name = col.get("name", col.get("header", ""))
+        col_type = col.get("extract_type", col.get("type", "auto"))  # Get column type
         
         # Priority 1: Standard email fields (Subject, From, To, Date, Body, etc.)
         if col_name in standard_fields and standard_fields[col_name]:
@@ -474,9 +547,9 @@ def email_to_record(
         elif col_name in rule_results and rule_results[col_name]:
             record[col_name] = rule_results[col_name]
         
-        # Priority 3: Smart search - use column name as keyword
+        # Priority 3: Smart search - use column name and TYPE for extraction
         else:
-            smart_value = smart_search_column(email_data, col_name)
+            smart_value = smart_search_column(email_data, col_name, col_type)
             record[col_name] = smart_value
             
             if explain and smart_value:
@@ -484,6 +557,7 @@ def email_to_record(
                     "matched": True,
                     "match_type": "smart_search",
                     "matched_term": col_name,
+                    "extract_type": col_type,
                     "search_in": ["all"],
                     "snippet": f"Found '{col_name}' in email content",
                 }

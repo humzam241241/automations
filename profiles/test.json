@@ -1,0 +1,58 @@
+{
+  "name": "test",
+  "input_source": "local_eml",
+  "auto_detect_columns": false,
+  "email_selection": {
+    "directory": "C:\\Users\\U1106812\\Downloads",
+    "pattern": "*.eml"
+  },
+  "schema": {
+    "columns": [
+      {
+        "name": "Work order #",
+        "type": "text"
+      },
+      {
+        "name": "EQQ #",
+        "type": "text"
+      },
+      {
+        "name": "SAP ID #",
+        "type": "text"
+      },
+      {
+        "name": "Room #",
+        "type": "text"
+      },
+      {
+        "name": "Bldg #",
+        "type": "text"
+      },
+      {
+        "name": "System #",
+        "type": "text"
+      },
+      {
+        "name": "subject",
+        "type": "text"
+      },
+      {
+        "name": "date",
+        "type": "text"
+      },
+      {
+        "name": "time",
+        "type": "text"
+      }
+    ]
+  },
+  "rules": [],
+  "output": {
+    "format": "excel",
+    "destination": "local",
+    "local_path": "./output",
+    "also_export_bi": false
+  },
+  "created_by": "Humza.Muhammad@sanofi.com",
+  "created_at": "2026-01-28T11:49:33.465932"
+}

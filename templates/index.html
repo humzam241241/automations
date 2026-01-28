@@ -131,43 +131,73 @@
             </div>
 
             <div class="form-section" id="columnsSection">
-                <label>Columns * <span class="help-toggle" onclick="toggleColumnHelp()">ℹ️ Smart Patterns</span></label>
-                <input type="text" id="columns" placeholder="Subject,From,Date,MI #,CAPA #,Priority">
-                <small>Comma-separated column names</small>
+                <label>Columns * <span class="help-toggle" onclick="toggleColumnHelp()">ℹ️ Help</span></label>
+                
+                <div id="columnBuilder" class="column-builder">
+                    <div id="columnList" class="column-list">
+                        <!-- Columns will be added here -->
+                    </div>
+                    <div class="add-column-row">
+                        <input type="text" id="newColumnName" placeholder="Column name (e.g., MI #, Work Order)" class="column-name-input">
+                        <select id="newColumnType" class="column-type-select">
+                            <option value="auto">🤖 Auto-detect</option>
+                            <option value="number">🔢 Number/ID</option>
+                            <option value="text">📝 Text</option>
+                            <option value="date">📅 Date</option>
+                            <option value="amount">💰 Amount ($)</option>
+                            <option value="yesno">✅ Yes/No</option>
+                            <option value="email_field">📧 Email Field</option>
+                        </select>
+                        <button type="button" onclick="addColumn()" class="btn-add-column">+ Add</button>
+                    </div>
+                </div>
+                
+                <!-- Hidden input for backward compatibility -->
+                <input type="hidden" id="columns" value="">
+                <input type="hidden" id="columnTypes" value="">
                 
                 <div id="columnHelp" class="help-box" style="display:none;">
-                    <h4>🧠 Intelligent Extraction - Works with ANY Column Name!</h4>
-                    <p>Type <strong>any</strong> column name - the system automatically extracts matching data:</p>
-                    
+                    <h4>🧠 Column Types Explained</h4>
                     <div class="help-grid">
                         <div class="help-item">
-                            <strong>🔢 Number Columns (auto-detected):</strong>
-                            <code>Building Number</code> → Building-123, Building #5<br>
-                            <code>Work Order #</code> → WO-12345, Work Order: 001<br>
-                            <code>MI #</code> → MI-12345, MI #001<br>
-                            <code>CAPA Number</code> → CAPA-001<br>
-                            <code>QE</code> → QE-xxx (abbreviations work!)<br>
-                            <code>XYZ ID</code> → XYZ-12345<br>
-                            <code>ABC123 Code</code> → Any ABC123 reference
+                            <strong>🔢 Number/ID:</strong><br>
+                            Extracts reference numbers only.<br>
+                            <code>MI #</code> → MI-12345<br>
+                            <code>Building Number</code> → 101, 205<br>
+                            Won't return "Yes" - numbers only!
                         </div>
                         <div class="help-item">
-                            <strong>📧 Email Fields:</strong>
-                            <code>Subject</code> → Email subject line<br>
-                            <code>From</code> / <code>Sender</code> → Sender address<br>
-                            <code>To</code> / <code>Recipient</code> → Recipient<br>
-                            <code>Date</code> → Email date<br>
-                            <code>Body</code> → Email body text
+                            <strong>📝 Text:</strong><br>
+                            Extracts text after "Column: value"<br>
+                            <code>Project Name</code> → "Alpha"<br>
+                            <code>Description</code> → actual text
                         </div>
                         <div class="help-item">
-                            <strong>🎯 Smart Extraction:</strong>
-                            <code>Amount</code> / <code>Cost</code> → $100, €50<br>
-                            <code>Priority</code> → High/Normal/Low<br>
-                            <code>Status</code> → Complete/Pending/Open<br>
-                            <code>Due Date</code> → Extracts dates<br>
-                            <code>Anything</code> → Searches for keyword!
+                            <strong>📅 Date:</strong><br>
+                            Extracts dates in any format<br>
+                            <code>Due Date</code> → 01/15/2026<br>
+                            <code>Received</code> → email date
+                        </div>
+                        <div class="help-item">
+                            <strong>💰 Amount:</strong><br>
+                            Extracts currency values<br>
+                            <code>Cost</code> → $1,234.56<br>
+                            <code>Total</code> → €500
+                        </div>
+                        <div class="help-item">
+                            <strong>✅ Yes/No:</strong><br>
+                            Checks if keyword exists<br>
+                            <code>Urgent</code> → Yes/No<br>
+                            <code>Approved</code> → Yes/No
+                        </div>
+                        <div class="help-item">
+                            <strong>📧 Email Field:</strong><br>
+                            Standard email fields<br>
+                            <code>Subject</code>, <code>From</code>,<br>
+                            <code>To</code>, <code>Date</code>, <code>Body</code>
                         </div>
                     </div>
-                    <p class="help-note">💡 <strong>The Magic:</strong> Type ANY column like <code>Room Number</code>, <code>Ticket ID</code>, <code>PRT #</code> - it will find and extract those values automatically! No setup needed.</p>
+                    <p class="help-note">💡 <strong>🤖 Auto-detect</strong> guesses the type from the column name. Use specific types to get exact results!</p>
                 </div>
             </div>
 
