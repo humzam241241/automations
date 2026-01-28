@@ -14,7 +14,7 @@ import secrets
 
 from core.engine import ExecutionEngine
 from core.profile_loader import ProfileLoader
-from jobs.column_suggester import suggest_columns
+from jobs.column_suggester import suggest_columns, ColumnSuggester
 from run_wizard import acquire_graph_token, test_graph_capabilities
 from jobs.ai_helper import AIHelper
 from jobs.column_suggester import ColumnSuggester
@@ -378,7 +378,8 @@ def suggest_columns_api():
         # Limit sample size
         emails = emails[:50]
 
-        suggestions = suggest_columns(emails, top_n=15)
+        suggester = ColumnSuggester(emails, max_samples=50)
+        suggestions = suggester.suggest(max_suggestions=15)
         return jsonify({'success': True, 'suggestions': suggestions})
     except Exception as e:
         logging.error(f"Suggest columns failed: {e}")
