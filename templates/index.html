@@ -1,0 +1,158 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Email Automation Pro - Web App</title>
+    <link rel="stylesheet" href="{{ url_for('static', filename='css/style.css') }}">
+</head>
+<body>
+    <!-- Login Modal -->
+    <div id="loginModal" class="modal">
+        <div class="modal-content">
+            <h2>✉️ Email Automation Pro</h2>
+            <p>Welcome! Please enter your username to continue</p>
+            <input type="text" id="usernameInput" placeholder="Enter username" autocomplete="username">
+            <div class="button-group">
+                <button onclick="login()" class="btn-primary">Login</button>
+                <button onclick="showUserList()" class="btn-secondary">Load User</button>
+            </div>
+            <div id="userListContainer" style="display:none;">
+                <h3>Select Existing User</h3>
+                <div id="userList"></div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Main App -->
+    <div id="app" style="display:none;">
+        <!-- Header -->
+        <header class="app-header">
+            <div class="header-content">
+                <div class="logo">
+                    <span class="logo-icon">✉️</span>
+                    <span class="logo-text">Email Automation Pro</span>
+                </div>
+                <div class="user-info">
+                    <span class="user-name" id="currentUser"></span>
+                    <button onclick="logout()" class="btn-logout">Logout</button>
+                </div>
+            </div>
+        </header>
+
+        <!-- Main Content -->
+        <div class="container">
+            <!-- Status Bar -->
+            <div class="status-bar">
+                <div class="status-card">
+                    <div class="status-icon" id="graphStatus">●</div>
+                    <span>Microsoft Graph</span>
+                </div>
+                <div class="status-card">
+                    <div class="status-icon" id="mailStatus">●</div>
+                    <span>Mail Access</span>
+                </div>
+                <div class="status-card">
+                    <div class="status-icon" id="driveStatus">●</div>
+                    <span>OneDrive</span>
+                </div>
+            </div>
+
+            <!-- Two Column Layout -->
+            <div class="main-grid">
+                <!-- Left: Profiles -->
+                <div class="panel">
+                    <div class="panel-header">
+                        <h2>📁 Profiles</h2>
+                        <button onclick="showCreateProfile()" class="btn-icon">+</button>
+                    </div>
+                    <div class="profile-list" id="profileList">
+                        <!-- Profiles will be loaded here -->
+                    </div>
+                </div>
+
+                <!-- Right: Details & Actions -->
+                <div class="panel">
+                    <div class="panel-header">
+                        <h2>📊 Dashboard</h2>
+                    </div>
+                    
+                    <!-- Profile Actions -->
+                    <div id="profileActions" style="display:none;">
+                        <div class="profile-details" id="profileDetails"></div>
+                        <div class="action-buttons">
+                            <button onclick="runProfile()" class="btn-success">▶ Run Profile</button>
+                            <button onclick="deleteProfile()" class="btn-danger">🗑 Delete</button>
+                        </div>
+                    </div>
+
+                    <!-- Activity Log -->
+                    <div class="activity-log">
+                        <h3>📋 Activity Log</h3>
+                        <div class="log-content" id="activityLog"></div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Create Profile Modal -->
+    <div id="createProfileModal" class="modal" style="display:none;">
+        <div class="modal-content modal-large">
+            <div class="modal-header">
+                <h2>✨ Create New Profile</h2>
+                <button onclick="closeCreateProfile()" class="btn-close">×</button>
+            </div>
+            
+            <div class="form-section">
+                <label>Profile Name *</label>
+                <input type="text" id="profileName" placeholder="e.g., Daily Reports">
+            </div>
+
+            <div class="form-section">
+                <label>Input Source *</label>
+                <select id="inputSource" onchange="updateInputOptions()">
+                    <option value="graph">📧 Microsoft Graph (Outlook)</option>
+                    <option value="local_eml">📁 Local .eml Files</option>
+                    <option value="excel_file">📊 Excel File (.xlsx)</option>
+                    <option value="csv_file">📄 CSV File</option>
+                </select>
+            </div>
+
+            <div id="inputOptions" class="form-section">
+                <!-- Dynamic input options -->
+            </div>
+
+            <div class="form-section">
+                <label>
+                    <input type="checkbox" id="autoDetect" onchange="toggleAutoDetect()">
+                    Auto-detect columns from file
+                </label>
+            </div>
+
+            <div class="form-section" id="columnsSection">
+                <label>Columns *</label>
+                <input type="text" id="columns" placeholder="Subject,From,Date,Priority">
+                <small>Comma-separated column names</small>
+            </div>
+
+            <div class="form-section">
+                <label>Output</label>
+                <select id="outputType">
+                    <option value="excel">📄 Excel File</option>
+                    <option value="bi_dashboard">📊 BI Dashboard</option>
+                    <option value="both">📄+📊 Excel + BI Dashboard</option>
+                </select>
+                <small id="outputHint" class="hint">Smart default based on input type</small>
+            </div>
+
+            <div class="modal-footer">
+                <button onclick="closeCreateProfile()" class="btn-secondary">Cancel</button>
+                <button onclick="saveProfile()" class="btn-primary">Create Profile</button>
+            </div>
+        </div>
+    </div>
+
+    <script src="{{ url_for('static', filename='js/app.js') }}"></script>
+</body>
+</html>
