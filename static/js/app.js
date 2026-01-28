@@ -416,20 +416,27 @@ function updateInputOptions() {
         `;
     } else if (inputSource === 'local_eml') {
         optionsDiv.innerHTML = `
-            <label>Directory Path</label>
-            <div class="file-input-group">
-                <input type="text" id="emlDirectory" value="./input_emails">
-                <button onclick="browseDirectory('emlDirectory')" class="btn-browse">📁 Browse</button>
+            <label>Email Files <small style="color:#666;">(Ctrl+Click for multiple)</small></label>
+            <div class="file-input-group" style="margin-bottom: 8px;">
+                <input type="text" id="emlFiles" placeholder="Select .eml files..." readonly style="cursor: pointer;" onclick="browseFile('emlFiles', 'local_eml')">
+                <button onclick="browseFile('emlFiles', 'local_eml')" class="btn-browse">📁 Select Files</button>
             </div>
+            <div style="text-align: center; color: #999; margin: 5px 0;">— OR —</div>
+            <div class="file-input-group">
+                <input type="text" id="emlDirectory" value="./input_emails" placeholder="Enter folder path">
+                <button onclick="browseDirectory('emlDirectory')" class="btn-browse">📂 Select Folder</button>
+            </div>
+            <small class="file-hint">Supports: .eml, PDF attachments, Word docs inside emails</small>
         `;
     } else if (inputSource === 'excel_file' || inputSource === 'csv_file') {
-        const fileType = inputSource === 'excel_file' ? '.xlsx' : '.csv';
+        const fileType = inputSource === 'excel_file' ? '.xlsx, .csv, .pdf' : '.csv, .xlsx, .pdf';
         optionsDiv.innerHTML = `
-            <label>File Path</label>
+            <label>Input Files <small style="color:#666;">(Ctrl+Click to select multiple)</small></label>
             <div class="file-input-group">
-                <input type="text" id="filePath" placeholder="C:\\path\\to\\file${fileType}">
-                <button onclick="browseFile('filePath', '${inputSource}')" class="btn-browse">📁 Browse</button>
+                <input type="text" id="filePath" placeholder="Select files (${fileType})" readonly style="cursor: pointer;" onclick="browseFile('filePath', '${inputSource}')">
+                <button onclick="browseFile('filePath', '${inputSource}')" class="btn-browse">📁 Browse Files</button>
             </div>
+            <small class="file-hint">Supports: Excel, CSV, PDF, Word documents</small>
             <button onclick="detectColumns()" class="btn-secondary" style="margin-top: 10px; width: 100%;">🔍 Detect Columns</button>
         `;
     }
@@ -681,14 +688,45 @@ async function saveProfile() {
         };
     } else if (inputSource === 'local_eml') {
         const dirInput = document.getElementById('emlDirectory');
+        const filesInput = document.getElementById('emlFiles');
+        
+        // Check if specific files were selected
+        let filePaths = [];
+        if (filesInput && filesInput.dataset.paths) {
+            try {
+                filePaths = JSON.parse(filesInput.dataset.paths);
+            } catch (e) {
+                if (filesInput.value) {
+                    filePaths = filesInput.value.split(';').map(p => p.trim()).filter(p => p);
+                }
+            }
+        }
+        
         profile.email_selection = {
             directory: dirInput ? dirInput.value : '',
-            pattern: '*.eml'
+            pattern: '*.eml',
+            file_paths: filePaths  // NEW: specific files selected
         };
     } else if (inputSource === 'excel_file' || inputSource === 'csv_file') {
         const fileInput = document.getElementById('filePath');
+        
+        // Get multiple file paths
+        let filePaths = [];
+        if (fileInput && fileInput.dataset.paths) {
+            try {
+                filePaths = JSON.parse(fileInput.dataset.paths);
+            } catch (e) {
+                if (fileInput.value) {
+                    filePaths = fileInput.value.split(';').map(p => p.trim()).filter(p => p);
+                }
+            }
+        } else if (fileInput && fileInput.value) {
+            filePaths = fileInput.value.split(';').map(p => p.trim()).filter(p => p);
+        }
+        
         profile.email_selection = {
-            file_path: fileInput ? fileInput.value : ''
+            file_path: filePaths[0] || '',  // Backward compat
+            file_paths: filePaths  // NEW: multiple files
         };
     }
     
@@ -802,7 +840,7 @@ async function browseDirectory(targetInputId) {
     }
 }
 
-async function browseFile(targetInputId, fileType) {
+async function browseFile(targetInputId, fileType, allowMultiple = true) {
     browserTargetInput = targetInputId;
     
     // Get current path from input (if any) to start in the right folder
@@ -811,42 +849,50 @@ async function browseFile(targetInputId, fileType) {
     let initialDir = '';
     
     if (currentPath) {
-        // Extract directory from file path
-        const lastSlash = Math.max(currentPath.lastIndexOf('\\'), currentPath.lastIndexOf('/'));
+        // Extract directory from first file path
+        const firstPath = currentPath.split(';')[0].trim();
+        const lastSlash = Math.max(firstPath.lastIndexOf('\\'), firstPath.lastIndexOf('/'));
         if (lastSlash > 0) {
-            initialDir = currentPath.substring(0, lastSlash);
+            initialDir = firstPath.substring(0, lastSlash);
         }
     }
     
     // Define file types for the dialog
-    // NOTE: Dialog will SHOW all files but highlight these types
     let fileTypes = [];
     
     if (fileType === 'excel_file') {
         fileTypes = [
-            {name: 'Excel Files', pattern: '*.xlsx *.xls'},
-            {name: 'CSV Files', pattern: '*.csv'},
-            {name: 'PDF Files', pattern: '*.pdf'}
+            {name: 'Excel & CSV Files', pattern: '*.xlsx *.xls *.csv'},
+            {name: 'PDF Files', pattern: '*.pdf'},
+            {name: 'All Files', pattern: '*.*'}
         ];
     } else if (fileType === 'csv_file') {
         fileTypes = [
-            {name: 'CSV Files', pattern: '*.csv'},
-            {name: 'Excel Files', pattern: '*.xlsx *.xls'},
+            {name: 'CSV & Excel Files', pattern: '*.csv *.xlsx *.xls'},
             {name: 'Text Files', pattern: '*.txt'},
-            {name: 'PDF Files', pattern: '*.pdf'}
+            {name: 'PDF Files', pattern: '*.pdf'},
+            {name: 'All Files', pattern: '*.*'}
+        ];
+    } else if (fileType === 'local_eml') {
+        fileTypes = [
+            {name: 'Email Files', pattern: '*.eml *.msg'},
+            {name: 'PDF Files', pattern: '*.pdf'},
+            {name: 'Word Documents', pattern: '*.docx *.doc'},
+            {name: 'All Files', pattern: '*.*'}
         ];
     } else {
         // Show all important file types
         fileTypes = [
+            {name: 'All Supported', pattern: '*.eml *.msg *.xlsx *.xls *.csv *.pdf *.docx'},
             {name: 'Email Files', pattern: '*.eml *.msg'},
             {name: 'Excel Files', pattern: '*.xlsx *.xls'},
             {name: 'CSV Files', pattern: '*.csv'},
             {name: 'PDF Files', pattern: '*.pdf'},
-            {name: 'Text Files', pattern: '*.txt'}
+            {name: 'All Files', pattern: '*.*'}
         ];
     }
     
-    // Open native file picker dialog - ACTUAL Windows Explorer!
+    // Open native file picker dialog - supports MULTIPLE selection
     try {
         const response = await fetch('/api/open-file-dialog', {
             method: 'POST',
@@ -854,14 +900,23 @@ async function browseFile(targetInputId, fileType) {
             body: JSON.stringify({
                 type: 'file',
                 file_types: fileTypes,
-                initial_dir: initialDir
+                initial_dir: initialDir,
+                multiple: allowMultiple  // Enable multi-select
             })
         });
         
         const data = await response.json();
         
-        if (data.success && data.path) {
-            input.value = data.path;
+        if (data.success && (data.path || data.paths)) {
+            // Store paths - show summary in input
+            if (data.paths && data.paths.length > 1) {
+                input.value = data.paths.join('; ');
+                input.dataset.paths = JSON.stringify(data.paths);
+                log(`Selected ${data.paths.length} files`, 'info');
+            } else {
+                input.value = data.path;
+                input.dataset.paths = JSON.stringify([data.path]);
+            }
             log(`✓ Selected: ${data.path}`, 'success');
             
             // Auto-detect columns if checkbox is checked

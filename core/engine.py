@@ -303,13 +303,17 @@ class ExecutionEngine:
             return adapter.fetch_messages(folder_id, search_query, top)
         
         elif input_source == "local_eml":
-            adapter = LocalEmailAdapter()
+            adapter = LocalEmailAdapter(extract_attachments=True)
             directory = email_selection.get("directory", "./input_emails")
             pattern = email_selection.get("pattern", "*.eml")
-            file_paths = email_selection.get("file_paths")
+            file_paths = email_selection.get("file_paths", [])
+            
+            # Filter out empty paths
+            file_paths = [p for p in file_paths if p and p.strip()]
             
             if file_paths:
-                return adapter.load_from_eml_files(file_paths)
+                # Use the new load_from_files which handles mixed types
+                return adapter.load_from_files(file_paths)
             else:
                 return adapter.scan_directory(directory, pattern)
         
@@ -321,40 +325,98 @@ class ExecutionEngine:
         elif input_source == "excel_file":
             from adapters.excel_csv_email import ExcelCSVEmailAdapter
             adapter = ExcelCSVEmailAdapter()
+            
+            # Support multiple files
+            file_paths = email_selection.get("file_paths", [])
             file_path = email_selection.get("file_path", "")
             
-            if not file_path:
+            # Use file_paths if available, else single file_path
+            if not file_paths and file_path:
+                file_paths = [file_path]
+            
+            file_paths = [p for p in file_paths if p and p.strip()]
+            
+            if not file_paths:
                 raise ValueError("Excel file path is required")
             
-            headers, emails = adapter.load_from_excel(file_path)
+            # Load from multiple files
+            all_emails = []
+            all_headers = []
+            
+            for fp in file_paths:
+                fp = fp.strip()
+                ext = fp.lower().split('.')[-1]
+                
+                if ext in ['pdf', 'docx', 'txt']:
+                    # Use LocalEmailAdapter for document files
+                    doc_adapter = LocalEmailAdapter(extract_attachments=True)
+                    all_emails.extend(doc_adapter.load_from_files([fp]))
+                elif ext == 'csv':
+                    headers, emails = adapter.load_from_csv(fp)
+                    if headers:
+                        all_headers = headers
+                    all_emails.extend(emails)
+                else:
+                    headers, emails = adapter.load_from_excel(fp)
+                    if headers:
+                        all_headers = headers
+                    all_emails.extend(emails)
             
             # If auto-detect enabled, update schema
-            if profile.get("auto_detect_columns") and headers:
+            if profile.get("auto_detect_columns") and all_headers:
                 profile["schema"] = {
-                    "columns": [{"name": h, "type": "text"} for h in headers]
+                    "columns": [{"name": h, "type": "text"} for h in all_headers]
                 }
-                logging.info(f"Auto-detected {len(headers)} columns from Excel")
+                logging.info(f"Auto-detected {len(all_headers)} columns from files")
             
-            return emails
+            return all_emails
         
         elif input_source == "csv_file":
             from adapters.excel_csv_email import ExcelCSVEmailAdapter
             adapter = ExcelCSVEmailAdapter()
+            
+            # Support multiple files
+            file_paths = email_selection.get("file_paths", [])
             file_path = email_selection.get("file_path", "")
             
-            if not file_path:
+            if not file_paths and file_path:
+                file_paths = [file_path]
+            
+            file_paths = [p for p in file_paths if p and p.strip()]
+            
+            if not file_paths:
                 raise ValueError("CSV file path is required")
             
-            headers, emails = adapter.load_from_csv(file_path)
+            # Load from multiple files
+            all_emails = []
+            all_headers = []
+            
+            for fp in file_paths:
+                fp = fp.strip()
+                ext = fp.lower().split('.')[-1]
+                
+                if ext in ['pdf', 'docx', 'txt']:
+                    doc_adapter = LocalEmailAdapter(extract_attachments=True)
+                    all_emails.extend(doc_adapter.load_from_files([fp]))
+                elif ext in ['xlsx', 'xls']:
+                    headers, emails = adapter.load_from_excel(fp)
+                    if headers:
+                        all_headers = headers
+                    all_emails.extend(emails)
+                else:
+                    headers, emails = adapter.load_from_csv(fp)
+                    if headers:
+                        all_headers = headers
+                    all_emails.extend(emails)
             
             # If auto-detect enabled, update schema
-            if profile.get("auto_detect_columns") and headers:
+            if profile.get("auto_detect_columns") and all_headers:
                 profile["schema"] = {
-                    "columns": [{"name": h, "type": "text"} for h in headers]
+                    "columns": [{"name": h, "type": "text"} for h in all_headers]
                 }
-                logging.info(f"Auto-detected {len(headers)} columns from CSV")
+                logging.info(f"Auto-detected {len(all_headers)} columns from CSV files")
             
-            return emails
+            return all_emails
         
         else:
             raise ValueError(f"Unknown input_source: {input_source}")

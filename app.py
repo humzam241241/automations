@@ -279,6 +279,8 @@ def open_file_dialog():
                 path = None
         else:
             # File picker with all important types visible
+            multiple = data.get('multiple', False)
+            
             if file_types:
                 filetypes = [
                     (ft['name'], ft['pattern']) for ft in file_types
@@ -291,27 +293,53 @@ def open_file_dialog():
                     ('Excel Files', '*.xlsx *.xls'),
                     ('CSV Files', '*.csv'),
                     ('PDF Files', '*.pdf'),
+                    ('Word Documents', '*.docx *.doc'),
                     ('Text Files', '*.txt'),
                 ]
             
-            path = filedialog.askopenfilename(
-                title='Select File',
-                initialdir=initial_dir,
-                filetypes=filetypes
-            )
+            if multiple:
+                # MULTIPLE FILE SELECTION
+                paths = filedialog.askopenfilenames(
+                    title='Select Files (Ctrl+Click for multiple)',
+                    initialdir=initial_dir,
+                    filetypes=filetypes
+                )
+                root.destroy()
+                
+                if paths:
+                    return jsonify({
+                        'success': True,
+                        'paths': list(paths),
+                        'path': paths[0] if len(paths) == 1 else '; '.join(paths)
+                    })
+                else:
+                    return jsonify({
+                        'success': False,
+                        'message': 'No files selected'
+                    })
+            else:
+                # Single file selection
+                path = filedialog.askopenfilename(
+                    title='Select File',
+                    initialdir=initial_dir,
+                    filetypes=filetypes
+                )
+                root.destroy()
+                
+                if path:
+                    return jsonify({
+                        'success': True,
+                        'path': path,
+                        'paths': [path]
+                    })
+                else:
+                    return jsonify({
+                        'success': False,
+                        'message': 'No file selected'
+                    })
         
         root.destroy()
-        
-        if path:
-            return jsonify({
-                'success': True,
-                'path': path
-            })
-        else:
-            return jsonify({
-                'success': False,
-                'message': 'No file selected'
-            })
+        return jsonify({'success': False, 'message': 'No selection made'})
     
     except Exception as e:
         logging.error(f"File dialog failed: {e}")
