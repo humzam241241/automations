@@ -224,6 +224,17 @@
                     <small id="outputHint" class="hint">Smart default based on input type</small>
                 </div>
                 
+                <div class="form-section">
+                    <label for="indexColumn">Index Column (for merging tables)</label>
+                    <select id="indexColumn">
+                        <option value="">None (no merging)</option>
+                        <option value="order" selected>Order / Work Order Number</option>
+                        <option value="equipment">Equipment</option>
+                        <option value="building">Building</option>
+                    </select>
+                    <small class="hint">When multiple emails have tables, merge rows with the same index value. Usually "Order" or "Work Order Number".</small>
+                </div>
+                
                 <div class="form-section synonym-section">
                     <label>
                         <input type="checkbox" id="useSynonyms" checked>

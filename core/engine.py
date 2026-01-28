@@ -114,9 +114,10 @@ class ExecutionEngine:
         """
         Execute email_to_table job.
         
-        KEY FEATURE: If an email has Excel attachments with multiple rows,
-        we EXPAND that email into multiple output records (one per Excel row).
-        This way an email with 10 order rows produces 10 output rows!
+        KEY FEATURES:
+        1. If email has Excel/table rows, expand into multiple records
+        2. If multiple order numbers found, create separate records per order
+        3. Ensures each order number gets its own row with properly filled columns
         """
         schema = profile.get("schema", {})
         rules = profile.get("rules", [])
@@ -129,12 +130,12 @@ class ExecutionEngine:
         explanations = []
         
         for email_data in emails:
-            # Check if email has Excel rows we should expand
+            # Check if email has Excel/table rows we should expand
             excel_rows = email_data.get("excel_rows", [])
             
             if excel_rows:
-                # EXPAND: Create one output record per Excel row
-                logging.info(f"Expanding email with {len(excel_rows)} Excel rows")
+                # EXPAND: Create one output record per Excel/table row
+                logging.info(f"Expanding email with {len(excel_rows)} table rows")
                 for row_data in excel_rows:
                     # Merge email metadata with Excel row data
                     # Excel row data takes priority (it's the actual data we want!)
@@ -152,17 +153,24 @@ class ExecutionEngine:
                     if explain:
                         explanations.append(explanation)
             else:
-                # Normal case: one email = one record
-                record, explanation = email_to_record(
+                # Try to expand multiple order numbers into separate rows
+                from jobs.email_to_table import expand_order_numbers_to_rows
+                
+                expanded = expand_order_numbers_to_rows(
                     email_data, schema, rules, explain, use_synonyms, use_ai_flag, ai_threshold
                 )
-                if ai_enabled:
-                    record, explanation = self._apply_ai_assist(
-                        record, explanation, email_data, ai_threshold
-                    )
-                records.append(record)
-                if explain:
-                    explanations.append(explanation)
+                
+                for record, explanation in expanded:
+                    if ai_enabled:
+                        record, explanation = self._apply_ai_assist(
+                            record, explanation, email_data, ai_threshold
+                        )
+                    records.append(record)
+                    if explain:
+                        explanations.append(explanation)
+        
+        # Post-process: Fill missing columns from email context and merge tables
+        records = self._fill_and_merge_records(records, emails, profile)
         
         return records, explanations
 
@@ -197,6 +205,84 @@ class ExecutionEngine:
             })
 
         return record, explanation
+    
+    def _fill_and_merge_records(
+        self,
+        records: List[Dict],
+        emails: List[Dict],
+        profile: Dict
+    ) -> List[Dict]:
+        """
+        Fill missing columns from email context and merge tables intelligently.
+        
+        This handles:
+        1. Tables with different structures across emails
+        2. Missing columns in some tables
+        3. Merging by index column (Work Order number)
+        4. Filling gaps from email body/text when columns aren't in tables
+        """
+        if not records:
+            return records
+        
+        try:
+            from jobs.table_merger import merge_tables, fill_missing_columns_from_context
+        except ImportError:
+            logging.warning("table_merger not available, skipping merge")
+            return records
+        
+        schema = profile.get("schema", {})
+        schema_columns = schema.get("columns", [])
+        schema_column_names = [col.get("name", "") for col in schema_columns]
+        use_synonyms = profile.get("use_synonyms", True)
+        index_column = profile.get("index_column")  # e.g., "order", "wo number"
+        
+        # Step 1: Fill missing columns from email context
+        # Map records back to their source emails (if possible)
+        # For now, we'll fill from all emails (less precise but works)
+        filled_records = []
+        
+        for record in records:
+            # Try to find source email (if record has _source_file or we can match by order)
+            source_email = None
+            
+            # Look for email that might have this data
+            order_val = None
+            for col_name in ["order", "Order", "work order", "Work Order"]:
+                if col_name in record and record[col_name]:
+                    order_val = str(record[col_name]).strip()
+                    break
+            
+            if order_val:
+                # Try to find email containing this order number
+                for email in emails:
+                    email_text = f"{email.get('subject', '')} {email.get('body', '')} {' '.join(email.get('attachment_text', []))}"
+                    if order_val in email_text:
+                        source_email = email
+                        break
+            
+            # If no specific email found, use first email as fallback
+            if not source_email and emails:
+                source_email = emails[0]
+            
+            # Fill missing columns from email context
+            if source_email:
+                filled_record = fill_missing_columns_from_context(
+                    record, source_email, schema_columns, use_synonyms
+                )
+            else:
+                filled_record = record
+            
+            filled_records.append(filled_record)
+        
+        # Step 2: Merge tables intelligently
+        merged = merge_tables(
+            filled_records,
+            index_column=index_column,
+            schema_columns=schema_column_names
+        )
+        
+        logging.info(f"Filled and merged {len(records)} records into {len(merged)} final records")
+        return merged
     
     def _job_append_to_master(
         self,

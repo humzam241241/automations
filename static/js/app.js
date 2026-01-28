@@ -356,6 +356,13 @@ function editProfile() {
         updateAiThresholdLabel();
     }
     
+    // Set index column
+    const indexColumnSelect = document.getElementById('indexColumn');
+    if (indexColumnSelect && currentProfile.index_column) {
+        indexColumnSelect.value = currentProfile.index_column;
+    }
+    updateIndexColumnOptions();
+    
     // Show modal
     document.getElementById('createProfileModal').style.display = 'flex';
 }
@@ -423,6 +430,13 @@ function showCreateProfile() {
     // Clear and reset the column builder
     clearColumns();
     updateInputOptions();
+    updateIndexColumnOptions();
+    
+    // Reset index column to default
+    const indexColumnSelect = document.getElementById('indexColumn');
+    if (indexColumnSelect) {
+        indexColumnSelect.value = 'order';  // Default to order
+    }
     
     document.getElementById('createProfileModal').style.display = 'flex';
 }
@@ -543,6 +557,7 @@ function addColumn() {
     // Update UI
     renderColumns();
     updateHiddenInputs();
+    updateIndexColumnOptions();
     
     // Clear input
     nameInput.value = '';
@@ -638,6 +653,61 @@ function removeColumn(index) {
     profileColumns.splice(index, 1);
     renderColumns();
     updateHiddenInputs();
+    updateIndexColumnOptions();
+}
+
+function updateIndexColumnOptions() {
+    const select = document.getElementById('indexColumn');
+    if (!select) return;
+    
+    // Save current selection
+    const currentValue = select.value;
+    
+    // Clear and add default options
+    select.innerHTML = '<option value="">None (no merging)</option>';
+    
+    // Add common options
+    const commonOptions = [
+        { value: 'order', text: 'Order / Work Order Number' },
+        { value: 'equipment', text: 'Equipment' },
+        { value: 'building', text: 'Building' }
+    ];
+    
+    commonOptions.forEach(opt => {
+        const option = document.createElement('option');
+        option.value = opt.value;
+        option.textContent = opt.text;
+        if (opt.value === currentValue) {
+            option.selected = true;
+        }
+        select.appendChild(option);
+    });
+    
+    // Add columns from profileColumns
+    profileColumns.forEach(col => {
+        const colName = col.name.toLowerCase();
+        // Skip if already in common options
+        if (!commonOptions.some(opt => opt.value === colName || colName.includes(opt.value))) {
+            const option = document.createElement('option');
+            option.value = col.name;
+            option.textContent = col.name;
+            if (col.name === currentValue) {
+                option.selected = true;
+            }
+            select.appendChild(option);
+        }
+    });
+    
+    // Restore selection if it still exists
+    if (currentValue && !select.value) {
+        // Try to find a match
+        for (let i = 0; i < select.options.length; i++) {
+            if (select.options[i].value.toLowerCase() === currentValue.toLowerCase()) {
+                select.selectedIndex = i;
+                break;
+            }
+        }
+    }
 }
 
 function renderColumns() {
@@ -853,11 +923,16 @@ async function saveProfile() {
         extract_type: col.type || 'auto'  // Used by extraction engine
     }));
     
+    // Get index column
+    const indexColumnSelect = document.getElementById('indexColumn');
+    const indexColumn = indexColumnSelect ? indexColumnSelect.value : '';
+    
     // Build profile
     const profile = {
         name: name,
         input_source: inputSource,
         auto_detect_columns: autoDetect,
+        index_column: indexColumn || undefined,  // Only include if set
         email_selection: {},
         schema: {
             columns: autoDetect ? [] : schemaColumns

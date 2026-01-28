@@ -94,8 +94,10 @@
       "mm no"
     ],
     "order": [
+      "wo",
       "work order",
-      "wo"
+      "work order #",
+      "wo#"
     ],
     "order type": [
       "order type",

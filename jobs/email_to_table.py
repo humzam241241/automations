@@ -332,6 +332,9 @@ def smart_search_column(email_data: Dict, column_name: str, extract_type: str = 
     def make_meta(source: str, confidence: int) -> Dict[str, int]:
         return {"source": source, "confidence": confidence}
 
+    # Check if we're focusing on a specific order number
+    focus_order = email_data.get("_focus_order")
+    
     # Collect contextual text
     subject = str(email_data.get("subject", ""))
     body = str(email_data.get("body", ""))
@@ -341,6 +344,15 @@ def smart_search_column(email_data: Dict, column_name: str, extract_type: str = 
     attachment_text = str(email_data.get("attachment_text", ""))
     
     all_content = f"{subject}\n{body}\n{from_addr}\n{to_addr}\n{attachments}\n{attachment_text}"
+    
+    # If focusing on specific order, extract context around it
+    if focus_order:
+        # Find the order number in content and extract surrounding context (400 chars before/after)
+        pattern = rf'.{{0,400}}{re.escape(focus_order)}.{{0,400}}'
+        match = re.search(pattern, all_content, re.IGNORECASE)
+        if match:
+            all_content = match.group(0)  # Use only context around this order
+    
     all_content_lower = all_content.lower()
     column_lower = column_name.lower().strip()
     column_synonyms = get_synonyms(column_name) if use_synonyms else [column_name]
@@ -599,6 +611,121 @@ def extract_prefix_numbers(prefix: str, content: str) -> str:
         return "; ".join(extracted[:10])
     
     return ""
+
+
+def expand_order_numbers_to_rows(
+    email_data: Dict,
+    schema: Dict,
+    rules: List[Dict],
+    explain: bool,
+    use_synonyms: bool,
+    use_ai: bool,
+    ai_threshold: int
+) -> List[Tuple[Dict[str, str], Dict]]:
+    """
+    When multiple order numbers are found, create separate records for each.
+    This ensures each order number gets its own row with properly filled columns.
+    
+    Returns:
+        List of (record, explanation) tuples, one per order number found
+    """
+    # First, check if we have table data (excel_rows or body table)
+    excel_rows = email_data.get("excel_rows", [])
+    if excel_rows:
+        # Already expanded - process each row separately
+        records = []
+        for row_data in excel_rows:
+            merged_data = dict(email_data)
+            merged_data.update(row_data)
+            record, explanation = email_to_record(
+                merged_data, schema, rules, explain, use_synonyms, use_ai, ai_threshold
+            )
+            records.append((record, explanation))
+        return records
+    
+    # Otherwise, try to find order numbers and expand them
+    # Find the "order" or "work order" column
+    order_column = None
+    for col in schema.get("columns", []):
+        col_name = col.get("name", "").lower()
+        if col_name in ["order", "work order", "wo", "wo number", "order number"]:
+            order_column = col.get("name")
+            break
+    
+    if not order_column:
+        # No order column - return single record as normal
+        record, explanation = email_to_record(
+            email_data, schema, rules, explain, use_synonyms, use_ai, ai_threshold
+        )
+        return [(record, explanation)]
+    
+    # Extract order numbers - but DON'T concatenate!
+    all_content = f"{email_data.get('subject', '')}\n{email_data.get('body', '')}\n{' '.join(email_data.get('attachment_text', []))}"
+    
+    # Try to find order numbers in table format first
+    order_numbers = []
+    
+    # Strategy 1: Look for table rows with order numbers
+    # Pattern: Order | Other columns... or Order: value
+    table_patterns = [
+        rf'{re.escape(order_column)}\s*[:\t|]\s*([^\n\t|]+)',  # Order: 4000390042 or Order | 4000390042
+        rf'{re.escape(order_column)}\s+(\d{{6,}})',  # Order    4000390042
+    ]
+    
+    for pattern in table_patterns:
+        matches = re.findall(pattern, all_content, re.IGNORECASE | re.MULTILINE)
+        for match in matches:
+            order_val = match.strip().split()[0] if isinstance(match, str) else str(match).strip().split()[0]
+            # Clean up - take first meaningful part
+            order_val = re.split(r'\s{2,}|\t|;', order_val)[0].strip()
+            if order_val and len(order_val) >= 4 and order_val not in order_numbers:
+                order_numbers.append(order_val)
+    
+    # Strategy 2: Look for standalone order number patterns (if no table matches)
+    if not order_numbers:
+        patterns = [
+            r'\b(\d{6,})\b',  # 4000390042
+            r'\b(\d{6,}\s+[A-Z]{2,}\d*)\b',  # 4000390042 ZM03
+        ]
+        for pattern in patterns:
+            matches = re.findall(pattern, all_content)
+            if matches:
+                for m in matches:
+                    order_val = m.strip() if isinstance(m, str) else str(m).strip()
+                    if len(order_val) >= 6 and order_val not in order_numbers:
+                        order_numbers.append(order_val)
+    
+    # Remove duplicates but preserve order
+    order_numbers = list(dict.fromkeys(order_numbers))
+    
+    if len(order_numbers) <= 1:
+        # Single or no order number - return normal record
+        record, explanation = email_to_record(
+            email_data, schema, rules, explain, use_synonyms, use_ai, ai_threshold
+        )
+        return [(record, explanation)]
+    
+    # Multiple order numbers found - create separate records
+    records = []
+    for order_num in order_numbers:
+        # Create a modified email_data with this specific order number
+        # This helps extraction find related fields for THIS order number
+        modified_data = dict(email_data)
+        
+        # Add order number to body context (helps smart_search find related fields)
+        modified_data["_focus_order"] = order_num
+        
+        # Extract record
+        record, explanation = email_to_record(
+            modified_data, schema, rules, explain, use_synonyms, use_ai, ai_threshold
+        )
+        
+        # Force the order number into the record
+        record[order_column] = order_num
+        
+        records.append((record, explanation))
+    
+    return records
 
 
 def email_to_record(
